@@ -3199,6 +3199,73 @@ async function handleOnboardingShopSearch(
   }
 }
 
+async function handleOnboardingProductImage(
+  request,
+  response
+) {
+  try {
+    const url = new URL(
+      request.url,
+      "http://127.0.0.1"
+    );
+
+    const sourceUrl =
+      url.searchParams.get("url") || "";
+
+    let parsed;
+
+    try {
+      parsed = new URL(sourceUrl);
+    } catch {
+      response.writeHead(400);
+      response.end("Invalid image URL");
+      return;
+    }
+
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.hostname !== "s.500fd.com"
+    ) {
+      response.writeHead(403);
+      response.end("Image host not allowed");
+      return;
+    }
+
+    const upstream = await fetch(sourceUrl);
+
+    if (!upstream.ok) {
+      response.writeHead(upstream.status);
+      response.end("Image fetch failed");
+      return;
+    }
+
+    const contentType =
+      upstream.headers.get("content-type") ||
+      "image/webp";
+
+    const body =
+      Buffer.from(
+        await upstream.arrayBuffer()
+      );
+
+    response.writeHead(200, {
+      "Content-Type": contentType,
+      "Cache-Control":
+        "public, max-age=3600"
+    });
+
+    response.end(body);
+  } catch (error) {
+    console.error(
+      "Onboarding product image proxy error:",
+      error
+    );
+
+    response.writeHead(500);
+    response.end("Image proxy failed");
+  }
+}
+
 async function handleOnboardingProducts(
   request,
   response
@@ -3719,6 +3786,18 @@ async function handleHttpRequest(request, response) {
       "/api/onboarding/shop-search"
   ) {
     await handleOnboardingShopSearch(
+      request,
+      response
+    );
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    url.pathname ===
+      "/api/onboarding/product-image"
+  ) {
+    await handleOnboardingProductImage(
       request,
       response
     );

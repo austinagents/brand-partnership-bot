@@ -1006,7 +1006,8 @@
           if (product.cover) {
             const image = document.createElement("img");
             image.className = "product-image";
-            image.src = product.cover;
+            image.src =
+              `${API_BASE_URL}/api/onboarding/product-image?url=${encodeURIComponent(product.cover)}`;
             image.alt = "";
             image.loading = "lazy";
             imageWrap.appendChild(image);
