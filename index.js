@@ -1577,10 +1577,25 @@ function buildBrandsActivityPage() {
     }
 
     .plan {
+      --badge-row: 34px;
+      --title-row: 118px;
+      --price-row: 104px;
+      --description-row: 112px;
+      --divider-row: 50px;
+      --feature-columns: repeat(2, minmax(0, 1fr));
+      --feature-gap: clamp(10px, 1.45vh, 18px);
+      --cta-row: clamp(52px, 6.2vh, 78px);
       height: 100%;
       min-height: 0;
-      display: flex;
-      flex-direction: column;
+      display: grid;
+      grid-template-rows:
+        var(--badge-row)
+        var(--title-row)
+        var(--price-row)
+        var(--description-row)
+        var(--divider-row)
+        minmax(0, 1fr)
+        var(--cta-row);
       padding: clamp(24px, 3vw, 44px);
       border: 1px solid var(--accent-border);
       border-radius: 8px;
@@ -1603,8 +1618,12 @@ function buildBrandsActivityPage() {
 
     .badge {
       width: fit-content;
-      margin-bottom: clamp(16px, 2.3vh, 26px);
-      padding: 8px 14px;
+      height: var(--badge-row);
+      display: inline-flex;
+      align-items: center;
+      align-self: start;
+      margin: 0;
+      padding: 0 18px;
       border-radius: 999px;
       background: var(--badge-bg);
       color: #151a14;
@@ -1616,6 +1635,7 @@ function buildBrandsActivityPage() {
     }
 
     h1 {
+      align-self: start;
       margin: 0;
       color: var(--text);
       font-size: clamp(34px, 3vw, 58px);
@@ -1626,9 +1646,10 @@ function buildBrandsActivityPage() {
 
     .price {
       display: flex;
-      align-items: baseline;
+      align-items: center;
+      align-self: start;
       gap: clamp(8px, 1vw, 14px);
-      margin-top: clamp(18px, 2.5vh, 30px);
+      margin: 0;
       color: var(--muted);
     }
 
@@ -1646,8 +1667,7 @@ function buildBrandsActivityPage() {
     }
 
     .description {
-      min-height: clamp(78px, 9vh, 122px);
-      margin: clamp(16px, 2.4vh, 28px) 0 0;
+      margin: 0;
       color: var(--body);
       font-size: clamp(17px, 1.55vw, 26px);
       line-height: 1.42;
@@ -1655,16 +1675,18 @@ function buildBrandsActivityPage() {
 
     .divider {
       height: 1px;
-      margin: clamp(18px, 3vh, 34px) 0 clamp(16px, 2.5vh, 28px);
+      width: 100%;
+      align-self: center;
+      margin: 0;
       background: var(--line);
     }
 
     ul {
-      flex: 1 1 auto;
       min-height: 0;
       display: grid;
+      grid-template-columns: var(--feature-columns);
       align-content: start;
-      gap: clamp(10px, 1.45vh, 18px);
+      gap: var(--feature-gap);
       margin: 0;
       padding: 0;
       list-style: none;
@@ -1694,10 +1716,10 @@ function buildBrandsActivityPage() {
     }
 
     .cta {
-      flex: 0 0 auto;
+      align-self: end;
       width: 100%;
-      height: clamp(52px, 6.2vh, 78px);
-      margin-top: clamp(28px, 4vh, 44px);
+      height: var(--cta-row);
+      margin: 0;
       border: 0;
       border-radius: 8px;
       background: var(--accent);
@@ -1735,12 +1757,19 @@ function buildBrandsActivityPage() {
       }
 
       .plan {
+        --badge-row: 30px;
+        --title-row: 78px;
+        --price-row: 72px;
+        --description-row: 62px;
+        --divider-row: 34px;
+        --feature-columns: repeat(2, minmax(0, 1fr));
+        --feature-gap: clamp(6px, 0.85vh, 9px);
+        --cta-row: clamp(44px, 5.2vh, 52px);
         padding: clamp(18px, 2.2vw, 30px);
       }
 
       .badge {
-        margin-bottom: clamp(10px, 1.2vh, 14px);
-        padding: 6px 12px;
+        padding: 0 12px;
         font-size: clamp(10px, 0.82vw, 12px);
       }
 
@@ -1749,7 +1778,7 @@ function buildBrandsActivityPage() {
       }
 
       .price {
-        margin-top: clamp(8px, 1.2vh, 13px);
+        gap: 9px;
       }
 
       .amount {
@@ -1761,20 +1790,12 @@ function buildBrandsActivityPage() {
       }
 
       .description {
-        min-height: clamp(42px, 5.8vh, 58px);
-        margin-top: clamp(8px, 1.1vh, 12px);
         font-size: clamp(14px, 1vw, 16px);
         line-height: 1.3;
       }
 
-      .divider {
-        margin: clamp(10px, 1.4vh, 14px) 0 clamp(9px, 1.2vh, 12px);
-      }
-
       ul {
-        flex: 1 1 auto;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: clamp(6px, 0.85vh, 9px);
+        gap: var(--feature-gap);
       }
 
       li {
@@ -1791,8 +1812,6 @@ function buildBrandsActivityPage() {
       }
 
       .cta {
-        height: clamp(44px, 5.2vh, 52px);
-        margin-top: clamp(20px, 2.6vh, 28px);
         font-size: clamp(13px, 0.95vw, 15px);
       }
     }
@@ -1811,12 +1830,19 @@ function buildBrandsActivityPage() {
       }
 
       .plan {
+        --badge-row: 28px;
+        --title-row: 66px;
+        --price-row: 58px;
+        --description-row: 50px;
+        --divider-row: 24px;
+        --feature-columns: repeat(2, minmax(0, 1fr));
+        --feature-gap: clamp(5px, 0.75vh, 7px);
+        --cta-row: clamp(42px, 5.8vh, 50px);
         padding: clamp(18px, 2vw, 28px);
       }
 
       .badge {
-        margin-bottom: 10px;
-        padding: 6px 10px;
+        padding: 0 10px;
       }
 
       h1 {
@@ -1824,7 +1850,7 @@ function buildBrandsActivityPage() {
       }
 
       .price {
-        margin-top: 9px;
+        gap: 8px;
       }
 
       .amount {
@@ -1836,20 +1862,12 @@ function buildBrandsActivityPage() {
       }
 
       .description {
-        min-height: clamp(44px, 6vh, 58px);
-        margin-top: 8px;
         font-size: clamp(13px, 0.92vw, 15px);
         line-height: 1.3;
       }
 
-      .divider {
-        margin: 10px 0;
-      }
-
       ul {
-        flex: 1 1 auto;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: clamp(6px, 0.9vh, 9px);
+        gap: var(--feature-gap);
       }
 
       li {
@@ -1865,8 +1883,6 @@ function buildBrandsActivityPage() {
       }
 
       .cta {
-        height: clamp(42px, 5.8vh, 50px);
-        margin-top: 20px;
         font-size: clamp(13px, 0.9vw, 15px);
       }
     }
@@ -1899,9 +1915,40 @@ function buildBrandsActivityPage() {
       }
 
       .plan {
+        --badge-row: auto;
+        --title-row: auto;
+        --price-row: auto;
+        --description-row: auto;
+        --divider-row: auto;
+        --feature-columns: 1fr;
+        --feature-gap: 16px;
+        --cta-row: 52px;
         height: auto;
         min-height: auto;
+        display: flex;
+        flex-direction: column;
         padding: 24px;
+      }
+
+      .badge {
+        height: 32px;
+        margin-bottom: 22px;
+      }
+
+      .price {
+        margin-top: 24px;
+      }
+
+      .description {
+        margin-top: 22px;
+      }
+
+      .divider {
+        margin: 30px 0 28px;
+      }
+
+      .cta {
+        margin-top: auto;
       }
 
       h1 {
