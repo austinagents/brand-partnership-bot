@@ -287,6 +287,17 @@ test("HTTP routes serve Activity UI and preserve existing endpoints", async () =
     assert.match(root.body, /PartnerLinks Plans/);
     assert.match(root.body, /Marketplace \+/);
     assert.match(root.body, /\$1,000/);
+    assert.match(root.body, /height: 100dvh/);
+    assert.match(root.body, /overflow: hidden/);
+    assert.match(root.body, /flex: 1 1 auto/);
+    assert.match(root.body, /flex: 0 0 auto/);
+    assert.match(root.body, /@media \(max-height: 980px\)/);
+    assert.match(root.body, /@media \(max-height: 760px\)/);
+    assert.match(root.body, /@media \(max-width: 800px\)/);
+    assert.doesNotMatch(
+      root.body,
+      /viewport-diagnostics/
+    );
 
     const brands = await requestHandler(capturedHandler, {
       url: "/brands",

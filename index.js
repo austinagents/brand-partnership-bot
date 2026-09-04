@@ -1535,37 +1535,51 @@ function buildBrandsActivityPage() {
     }
 
     html {
-      min-height: 100%;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
       background: var(--page);
     }
 
     body {
-      min-height: 100vh;
+      width: 100%;
+      height: 100%;
       margin: 0;
-      display: grid;
-      place-items: center;
-      padding: 32px 18px;
+      overflow: hidden;
+      display: flex;
+      padding: 0;
       background:
         radial-gradient(circle at 50% -20%, rgba(36, 57, 43, 0.32), transparent 42%),
         linear-gradient(180deg, #0b100d 0%, #070908 100%);
     }
 
     main {
-      width: min(100%, 980px);
+      width: 100%;
+      height: 100dvh;
+      display: flex;
+      justify-content: center;
+      padding:
+        clamp(18px, 3vh, 36px)
+        clamp(24px, 4vw, 72px)
+        clamp(112px, 14vh, 150px);
     }
 
     .plans {
+      width: 100%;
+      max-width: 1760px;
+      height: 100%;
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 22px;
+      gap: clamp(24px, 3vw, 48px);
       align-items: stretch;
     }
 
     .plan {
-      min-height: 600px;
+      height: 100%;
+      min-height: 0;
       display: flex;
       flex-direction: column;
-      padding: 32px;
+      padding: clamp(24px, 3vw, 44px);
       border: 1px solid var(--accent-border);
       border-radius: 8px;
       background: var(--card-bg);
@@ -1587,12 +1601,12 @@ function buildBrandsActivityPage() {
 
     .badge {
       width: fit-content;
-      margin-bottom: 22px;
-      padding: 7px 11px;
+      margin-bottom: clamp(16px, 2.3vh, 26px);
+      padding: 8px 14px;
       border-radius: 999px;
       background: var(--badge-bg);
       color: #151a14;
-      font-size: 11px;
+      font-size: clamp(11px, 1.05vw, 15px);
       font-weight: 800;
       line-height: 1;
       letter-spacing: 0.08em;
@@ -1602,8 +1616,8 @@ function buildBrandsActivityPage() {
     h1 {
       margin: 0;
       color: var(--text);
-      font-size: 32px;
-      line-height: 1.08;
+      font-size: clamp(34px, 3vw, 58px);
+      line-height: 1.02;
       font-weight: 760;
       letter-spacing: 0;
     }
@@ -1611,41 +1625,44 @@ function buildBrandsActivityPage() {
     .price {
       display: flex;
       align-items: baseline;
-      gap: 10px;
-      margin-top: 24px;
+      gap: clamp(8px, 1vw, 14px);
+      margin-top: clamp(18px, 2.5vh, 30px);
       color: var(--muted);
     }
 
     .amount {
       color: var(--accent);
-      font-size: 58px;
+      font-size: clamp(56px, 5.4vw, 100px);
       line-height: 0.95;
       font-weight: 780;
       letter-spacing: 0;
     }
 
     .period {
-      font-size: 18px;
+      font-size: clamp(18px, 1.65vw, 28px);
       font-weight: 600;
     }
 
     .description {
-      min-height: 84px;
-      margin: 22px 0 0;
+      min-height: clamp(78px, 9vh, 122px);
+      margin: clamp(16px, 2.4vh, 28px) 0 0;
       color: var(--body);
-      font-size: 17px;
-      line-height: 1.5;
+      font-size: clamp(17px, 1.55vw, 26px);
+      line-height: 1.42;
     }
 
     .divider {
       height: 1px;
-      margin: 30px 0 28px;
+      margin: clamp(18px, 3vh, 34px) 0 clamp(16px, 2.5vh, 28px);
       background: var(--line);
     }
 
     ul {
+      flex: 1 1 auto;
+      min-height: 0;
       display: grid;
-      gap: 16px;
+      align-content: start;
+      gap: clamp(10px, 1.45vh, 18px);
       margin: 0;
       padding: 0;
       list-style: none;
@@ -1653,37 +1670,38 @@ function buildBrandsActivityPage() {
 
     li {
       display: grid;
-      grid-template-columns: 24px 1fr;
-      gap: 12px;
+      grid-template-columns: clamp(22px, 1.8vw, 30px) 1fr;
+      gap: clamp(10px, 1.1vw, 16px);
       align-items: start;
       color: #e6e9e2;
-      font-size: 15px;
-      line-height: 1.35;
+      font-size: clamp(15px, 1.35vw, 23px);
+      line-height: 1.28;
     }
 
     .check {
-      width: 22px;
-      height: 22px;
+      width: clamp(22px, 1.8vw, 30px);
+      height: clamp(22px, 1.8vw, 30px);
       display: inline-grid;
       place-items: center;
       border-radius: 999px;
       background: var(--accent);
       color: #151a14;
-      font-size: 14px;
+      font-size: clamp(14px, 1.1vw, 18px);
       font-weight: 900;
       line-height: 1;
     }
 
     .cta {
+      flex: 0 0 auto;
       width: 100%;
-      min-height: 52px;
-      margin-top: auto;
+      height: clamp(52px, 6.2vh, 78px);
+      margin-top: clamp(28px, 4vh, 44px);
       border: 0;
       border-radius: 8px;
       background: var(--accent);
       color: #11150f;
       font: inherit;
-      font-size: 15px;
+      font-size: clamp(16px, 1.45vw, 24px);
       font-weight: 800;
       cursor: pointer;
       transition: filter 150ms ease, transform 150ms ease;
@@ -1702,18 +1720,175 @@ function buildBrandsActivityPage() {
       outline-offset: 3px;
     }
 
-    @media (max-width: 760px) {
+    @media (max-height: 980px) and (min-width: 801px) {
       body {
-        align-items: start;
-        padding: 18px 14px 26px;
+        padding: 0;
+      }
+
+      main {
+        padding:
+          clamp(14px, 2.2vh, 24px)
+          clamp(24px, 3vw, 56px)
+          clamp(108px, 12vh, 132px);
+      }
+
+      .plan {
+        padding: clamp(22px, 2.5vw, 34px);
+      }
+
+      .badge {
+        margin-bottom: clamp(12px, 1.5vh, 18px);
+        padding: 7px 13px;
+        font-size: clamp(10px, 0.9vw, 13px);
+      }
+
+      h1 {
+        font-size: clamp(30px, 2.7vw, 48px);
+      }
+
+      .price {
+        margin-top: clamp(12px, 1.6vh, 20px);
+      }
+
+      .amount {
+        font-size: clamp(48px, 4.8vw, 78px);
+      }
+
+      .period {
+        font-size: clamp(16px, 1.35vw, 22px);
+      }
+
+      .description {
+        min-height: clamp(58px, 7.5vh, 84px);
+        margin-top: clamp(10px, 1.4vh, 16px);
+        font-size: clamp(15px, 1.2vw, 19px);
+      }
+
+      .divider {
+        margin: clamp(12px, 1.9vh, 22px) 0 clamp(12px, 1.7vh, 20px);
+      }
+
+      ul {
+        gap: clamp(8px, 1.1vh, 13px);
+      }
+
+      li {
+        font-size: clamp(13px, 1vw, 17px);
+        line-height: 1.2;
+      }
+
+      .check {
+        width: clamp(19px, 1.4vw, 23px);
+        height: clamp(19px, 1.4vw, 23px);
+        font-size: clamp(12px, 0.9vw, 14px);
+      }
+
+      .cta {
+        height: clamp(48px, 5.6vh, 60px);
+        margin-top: clamp(28px, 3.2vh, 36px);
+        font-size: clamp(14px, 1.05vw, 17px);
+      }
+    }
+
+    @media (max-height: 760px) and (min-width: 801px) {
+      main {
+        padding:
+          12px
+          clamp(18px, 2.4vw, 40px)
+          clamp(96px, 13vh, 112px);
       }
 
       .plans {
+        gap: clamp(16px, 2.2vw, 32px);
+      }
+
+      .plan {
+        padding: clamp(18px, 2vw, 28px);
+      }
+
+      .badge {
+        margin-bottom: 10px;
+        padding: 6px 10px;
+      }
+
+      h1 {
+        font-size: clamp(25px, 2.2vw, 36px);
+      }
+
+      .price {
+        margin-top: 9px;
+      }
+
+      .amount {
+        font-size: clamp(38px, 4vw, 60px);
+      }
+
+      .period {
+        font-size: clamp(14px, 1.1vw, 18px);
+      }
+
+      .description {
+        min-height: clamp(44px, 6vh, 58px);
+        margin-top: 8px;
+        font-size: clamp(13px, 0.92vw, 15px);
+        line-height: 1.3;
+      }
+
+      .divider {
+        margin: 10px 0;
+      }
+
+      ul {
+        gap: clamp(6px, 0.9vh, 9px);
+      }
+
+      li {
+        grid-template-columns: 18px 1fr;
+        gap: 9px;
+        font-size: clamp(12px, 0.82vw, 14px);
+      }
+
+      .check {
+        width: 18px;
+        height: 18px;
+        font-size: 11px;
+      }
+
+      .cta {
+        height: clamp(42px, 5.8vh, 50px);
+        margin-top: 24px;
+        font-size: clamp(13px, 0.9vw, 15px);
+      }
+    }
+
+    @media (max-width: 800px) {
+      html,
+      body {
+        min-height: 100%;
+        height: auto;
+        overflow-x: hidden;
+        overflow-y: auto;
+      }
+
+      body {
+        display: block;
+        padding: 0;
+      }
+
+      main {
+        height: auto;
+        min-height: 100dvh;
+        padding: 18px 14px 112px;
+      }
+
+      .plans {
+        height: auto;
         grid-template-columns: 1fr;
         gap: 16px;
       }
 
       .plan {
+        height: auto;
         min-height: auto;
         padding: 24px;
       }
