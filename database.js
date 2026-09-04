@@ -119,6 +119,24 @@ function initializeSchema(db) {
         ON DELETE RESTRICT
     );
 
+    CREATE TABLE IF NOT EXISTS brand_onboarding_submissions (
+      conversation_id INTEGER PRIMARY KEY,
+      guild_id TEXT NOT NULL,
+      discord_user_id TEXT NOT NULL,
+      plan_key TEXT NOT NULL,
+      seller_id TEXT NOT NULL,
+      shop_name TEXT NOT NULL,
+      shop_json TEXT NOT NULL,
+      selected_products_json TEXT NOT NULL,
+      sample_capacity TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (conversation_id)
+        REFERENCES partnership_conversations(conversation_id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT
+    );
+
     CREATE TABLE IF NOT EXISTS stripe_customers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       guild_id TEXT NOT NULL,
@@ -435,6 +453,49 @@ function saveStripeCustomer(db, customer) {
     db,
     customer.guildId,
     customer.discordUserId
+  );
+}
+
+function upsertBrandOnboardingSubmission(db, onboarding) {
+  const timestamp = nowISO();
+
+  db.prepare(`
+    INSERT INTO brand_onboarding_submissions (
+      conversation_id,
+      guild_id,
+      discord_user_id,
+      plan_key,
+      seller_id,
+      shop_name,
+      shop_json,
+      selected_products_json,
+      sample_capacity,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(conversation_id) DO UPDATE SET
+      guild_id = excluded.guild_id,
+      discord_user_id = excluded.discord_user_id,
+      plan_key = excluded.plan_key,
+      seller_id = excluded.seller_id,
+      shop_name = excluded.shop_name,
+      shop_json = excluded.shop_json,
+      selected_products_json = excluded.selected_products_json,
+      sample_capacity = excluded.sample_capacity,
+      updated_at = excluded.updated_at
+  `).run(
+    onboarding.conversationId,
+    onboarding.guildId,
+    onboarding.discordUserId,
+    onboarding.planKey,
+    onboarding.sellerId,
+    onboarding.shopName,
+    JSON.stringify(onboarding.shop),
+    JSON.stringify(onboarding.products),
+    onboarding.sampleCapacity,
+    timestamp,
+    timestamp
   );
 }
 
@@ -780,6 +841,7 @@ module.exports = {
   getPartnershipConversationByChannelId,
   getStripeCustomerForDiscordUser,
   saveStripeCustomer,
+  upsertBrandOnboardingSubmission,
   upsertStripeCheckoutSession,
   getStripeCheckoutSession,
   updateStripeCheckoutSessionStatus,

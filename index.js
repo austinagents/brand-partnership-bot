@@ -31,6 +31,7 @@ const {
   getPartnershipConversationByChannelId,
   getStripeCustomerForDiscordUser,
   saveStripeCustomer,
+  upsertBrandOnboardingSubmission,
   upsertStripeCheckoutSession,
   getStripeCheckoutSession,
   updateStripeCheckoutSessionStatus,
@@ -3053,6 +3054,23 @@ async function handleOnboardingShopSearch(
         ? body.channel_id.trim()
         : "";
 
+    const shop =
+      body.shop &&
+      typeof body.shop === "object" &&
+      !Array.isArray(body.shop)
+        ? body.shop
+        : null;
+
+    const products =
+      Array.isArray(body.products)
+        ? body.products
+        : [];
+
+    const sampleCapacity =
+      typeof body.sample_capacity === "string"
+        ? body.sample_capacity.trim()
+        : "";
+
     const shopName =
       typeof body.shop_name === "string"
         ? body.shop_name.trim()
@@ -3350,12 +3368,61 @@ async function handleActivityCheckout(
         : "";
 
     if (!planKey || !channelId) {
-      sendJsonResponse(
+      sendOnboardingJsonResponse(
         response,
         400,
         {
           error:
             "Plan and partnership channel are required.",
+        }
+      );
+      return;
+    }
+
+    const sellerId =
+      shop &&
+      typeof shop.seller_id === "string"
+        ? shop.seller_id.trim()
+        : "";
+
+    const shopName =
+      shop &&
+      typeof shop.name === "string"
+        ? shop.name.trim()
+        : "";
+
+    const validProducts =
+      products.filter(
+        (product) =>
+          product &&
+          typeof product === "object" &&
+          !Array.isArray(product) &&
+          typeof product.product_id === "string" &&
+          product.product_id.trim()
+      );
+
+    const allowedSampleCapacities =
+      new Set([
+        "11–25",
+        "26–50",
+        "51–100",
+        "100+",
+      ]);
+
+    if (
+      !sellerId ||
+      !shopName ||
+      validProducts.length === 0 ||
+      !allowedSampleCapacities.has(
+        sampleCapacity
+      )
+    ) {
+      sendOnboardingJsonResponse(
+        response,
+        400,
+        {
+          error:
+            "TikTok Shop, selected products, and sample capacity are required.",
         }
       );
       return;
@@ -3368,7 +3435,7 @@ async function handleActivityCheckout(
       );
 
     if (!conversation) {
-      sendJsonResponse(
+      sendOnboardingJsonResponse(
         response,
         404,
         {
@@ -3382,7 +3449,7 @@ async function handleActivityCheckout(
     if (
       conversation.guild_id !== GUILD_ID
     ) {
-      sendJsonResponse(
+      sendOnboardingJsonResponse(
         response,
         403,
         {
@@ -3396,7 +3463,7 @@ async function handleActivityCheckout(
     if (
       conversation.status !== "active"
     ) {
-      sendJsonResponse(
+      sendOnboardingJsonResponse(
         response,
         409,
         {
@@ -3429,7 +3496,7 @@ async function handleActivityCheckout(
         PLAN_MARKETPLACE_MANAGEMENT,
       ].includes(plan.key)
     ) {
-      sendJsonResponse(
+      sendOnboardingJsonResponse(
         response,
         400,
         {
@@ -3439,6 +3506,26 @@ async function handleActivityCheckout(
       );
       return;
     }
+
+    upsertBrandOnboardingSubmission(
+      db,
+      {
+        conversationId:
+          conversation.conversation_id,
+        guildId:
+          conversation.guild_id,
+        discordUserId:
+          conversation.discord_user_id,
+        planKey:
+          plan.key,
+        sellerId,
+        shopName,
+        shop,
+        products:
+          validProducts,
+        sampleCapacity,
+      }
+    );
 
     const stripe =
       getStripeClient();
@@ -3531,7 +3618,7 @@ async function handleActivityCheckout(
       }
     );
 
-    sendJsonResponse(
+    sendOnboardingJsonResponse(
       response,
       200,
       {
@@ -3545,7 +3632,7 @@ async function handleActivityCheckout(
       error
     );
 
-    sendJsonResponse(
+    sendOnboardingJsonResponse(
       response,
       500,
       {
@@ -3576,7 +3663,9 @@ async function handleHttpRequest(request, response) {
       url.pathname ===
         "/api/onboarding/shop-search" ||
       url.pathname ===
-        "/api/onboarding/products"
+        "/api/onboarding/products" ||
+      url.pathname ===
+        "/stripe/activity-checkout"
     )
   ) {
     response.writeHead(204, {
