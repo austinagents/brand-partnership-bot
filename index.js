@@ -1,7 +1,9 @@
 require("dotenv").config();
 
 const fs = require("fs");
+const http = require("http");
 const path = require("path");
+const Stripe = require("stripe");
 
 const {
   Client,
@@ -24,6 +26,17 @@ const {
   recordJoinAttribution,
   upsertPartnershipConversation,
   migrateConversationsFromJson,
+  getPartnershipConversationByChannelId,
+  getStripeCustomerForDiscordUser,
+  saveStripeCustomer,
+  upsertStripeCheckoutSession,
+  getStripeCheckoutSession,
+  updateStripeCheckoutSessionStatus,
+  upsertBrandSubscription,
+  updateSubscriptionInvoiceStatus,
+  beginStripeWebhookEvent,
+  markStripeWebhookEventProcessed,
+  markStripeWebhookEventFailed,
 } = require("./database");
 
 const {
@@ -32,6 +45,15 @@ const {
   mergeInviteSnapshot,
   snapshotInvites,
 } = require("./attribution");
+
+const {
+  PLAN_MARKETPLACE_AFFILIATE,
+  PLAN_MARKETPLACE_MANAGEMENT,
+  buildBillingMetadata,
+  getBillingPlans,
+  getPlanByKey,
+  processStripeWebhookEvent,
+} = require("./billing");
 
 // ============================================================
 // CONFIG
@@ -44,6 +66,10 @@ const {
   ADMIN_ROLE_ID,
   ACTIVE_CATEGORY_ID,
   ARCHIVED_CATEGORY_ID,
+  STRIPE_SECRET_KEY,
+  STRIPE_WEBHOOK_SECRET,
+  PUBLIC_BASE_URL,
+  HTTP_PORT,
 } = process.env;
 
 const REQUIRED_ENV = {
@@ -64,6 +90,7 @@ const CONVERSATIONS_FILE = path.join(__dirname, "conversations.json");
 const STATE_FILE = path.join(__dirname, "state.json");
 
 const db = openDatabase();
+let stripeClient = null;
 
 // ============================================================
 // JSON STORAGE
@@ -113,6 +140,251 @@ function saveState(state) {
 
 function paddedId(number) {
   return String(number).padStart(3, "0");
+}
+
+// ============================================================
+// BILLING HELPERS
+// ============================================================
+
+function getStripeClient() {
+  if (!STRIPE_SECRET_KEY || !STRIPE_SECRET_KEY.trim()) {
+    throw new Error("Missing STRIPE_SECRET_KEY.");
+  }
+
+  if (STRIPE_SECRET_KEY.startsWith("sk_live_")) {
+    throw new Error(
+      "Live Stripe keys are disabled for this beta deployment."
+    );
+  }
+
+  if (!stripeClient) {
+    stripeClient = new Stripe(STRIPE_SECRET_KEY);
+  }
+
+  return stripeClient;
+}
+
+function requirePublicBaseUrl() {
+  if (!PUBLIC_BASE_URL || !PUBLIC_BASE_URL.trim()) {
+    throw new Error("Missing PUBLIC_BASE_URL.");
+  }
+
+  return PUBLIC_BASE_URL.replace(/\/+$/, "");
+}
+
+function getConfiguredBillingPlans() {
+  return getBillingPlans(process.env);
+}
+
+function requireBillingConversation(interaction) {
+  const conversation =
+    getPartnershipConversationByChannelId(
+      db,
+      interaction.channelId
+    );
+
+  if (!conversation) {
+    throw new Error(
+      "No partnership conversation record found for this channel."
+    );
+  }
+
+  if (
+    conversation.discord_user_id !== interaction.user.id
+  ) {
+    return {
+      conversation,
+      allowed: false,
+    };
+  }
+
+  return {
+    conversation,
+    allowed: true,
+  };
+}
+
+async function getOrCreateStripeCustomer({
+  stripe,
+  conversation,
+  user,
+}) {
+  const existing = getStripeCustomerForDiscordUser(
+    db,
+    conversation.guild_id,
+    conversation.discord_user_id
+  );
+
+  if (existing) {
+    return existing;
+  }
+
+  const customer = await stripe.customers.create(
+    {
+      description:
+        `Discord user ${user.tag || user.id}`,
+      metadata: {
+        guild_id: conversation.guild_id,
+        discord_user_id:
+          conversation.discord_user_id,
+      },
+    },
+    {
+      idempotencyKey:
+        `customer:${conversation.guild_id}:${conversation.discord_user_id}`,
+    }
+  );
+
+  return saveStripeCustomer(db, {
+    guildId: conversation.guild_id,
+    discordUserId: conversation.discord_user_id,
+    stripeCustomerId: customer.id,
+  });
+}
+
+function isoFromStripeTimestamp(timestamp) {
+  if (!timestamp) return null;
+  return new Date(timestamp * 1000).toISOString();
+}
+
+function buildCheckoutUrls() {
+  const baseUrl = requirePublicBaseUrl();
+
+  return {
+    successUrl:
+      `${baseUrl}/stripe/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancelUrl: `${baseUrl}/stripe/cancel`,
+  };
+}
+
+async function createStripeCheckout(interaction, planKey) {
+  const { conversation, allowed } =
+    requireBillingConversation(interaction);
+
+  if (!allowed) {
+    await interaction.reply({
+      content:
+        "Only the person who opened this partnership conversation can use billing.",
+      flags: MessageFlags.Ephemeral,
+    });
+
+    return;
+  }
+
+  await interaction.deferReply({
+    flags: MessageFlags.Ephemeral,
+  });
+
+  const stripe = getStripeClient();
+  const plans = getConfiguredBillingPlans();
+  const plan = getPlanByKey(plans, planKey);
+  const customer = await getOrCreateStripeCustomer({
+    stripe,
+    conversation,
+    user: interaction.user,
+  });
+  const metadata = buildBillingMetadata(
+    conversation,
+    plan.key
+  );
+  const { successUrl, cancelUrl } = buildCheckoutUrls();
+
+  const session =
+    await stripe.checkout.sessions.create(
+      {
+        mode: "subscription",
+        customer: customer.stripe_customer_id,
+        client_reference_id:
+          `${conversation.guild_id}:${conversation.discord_user_id}:${conversation.conversation_id}`,
+        line_items: [
+          {
+            price: plan.priceId,
+            quantity: 1,
+          },
+        ],
+        metadata,
+        subscription_data: {
+          metadata,
+        },
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+      },
+      {
+        idempotencyKey:
+          `checkout:${conversation.conversation_id}:${conversation.discord_user_id}:${plan.key}`,
+      }
+    );
+
+  upsertStripeCheckoutSession(db, {
+    stripeCheckoutSessionId: session.id,
+    stripeCustomerId: customer.stripe_customer_id,
+    conversationId: conversation.conversation_id,
+    guildId: conversation.guild_id,
+    discordUserId: conversation.discord_user_id,
+    planKey: plan.key,
+    stripePriceId: plan.priceId,
+    creatorId: conversation.creator_id,
+    creatorInviteId: conversation.creator_invite_id,
+    creatorInviteCode:
+      conversation.creator_invite_code,
+    status: session.status || "open",
+    url: session.url,
+    expiresAt: isoFromStripeTimestamp(
+      session.expires_at
+    ),
+  });
+
+  await interaction.editReply({
+    content:
+      `Checkout for ${plan.label} (${plan.amountLabel}): ${session.url}`,
+  });
+}
+
+async function createBillingPortalSession(interaction) {
+  const { conversation, allowed } =
+    requireBillingConversation(interaction);
+
+  if (!allowed) {
+    await interaction.reply({
+      content:
+        "Only the person who opened this partnership conversation can manage billing.",
+      flags: MessageFlags.Ephemeral,
+    });
+
+    return;
+  }
+
+  await interaction.deferReply({
+    flags: MessageFlags.Ephemeral,
+  });
+
+  const customer = getStripeCustomerForDiscordUser(
+    db,
+    conversation.guild_id,
+    conversation.discord_user_id
+  );
+
+  if (!customer) {
+    await interaction.editReply({
+      content:
+        "No Stripe billing account exists yet. Choose a plan first.",
+    });
+
+    return;
+  }
+
+  const stripe = getStripeClient();
+  const baseUrl = requirePublicBaseUrl();
+  const portalSession =
+    await stripe.billingPortal.sessions.create({
+      customer: customer.stripe_customer_id,
+      return_url: `${baseUrl}/stripe/success`,
+    });
+
+  await interaction.editReply({
+    content:
+      `Manage billing: ${portalSession.url}`,
+  });
 }
 
 // ============================================================
@@ -542,14 +814,41 @@ function buildConversationWelcome(user, conversationNumber) {
     .setEmoji("📁")
     .setStyle(ButtonStyle.Secondary);
 
-  const row = new ActionRowBuilder().addComponents(
+  const archiveRow = new ActionRowBuilder().addComponents(
     archiveButton
+  );
+
+  const affiliateButton = new ButtonBuilder()
+    .setCustomId(
+      `billing_plan:${PLAN_MARKETPLACE_AFFILIATE}`
+    )
+    .setLabel(
+      "Marketplace + Affiliate Access - $500/mo"
+    )
+    .setStyle(ButtonStyle.Primary);
+
+  const managementButton = new ButtonBuilder()
+    .setCustomId(
+      `billing_plan:${PLAN_MARKETPLACE_MANAGEMENT}`
+    )
+    .setLabel("Marketplace + Management - $1,000/mo")
+    .setStyle(ButtonStyle.Primary);
+
+  const manageBillingButton = new ButtonBuilder()
+    .setCustomId("billing_manage")
+    .setLabel("Manage Billing")
+    .setStyle(ButtonStyle.Secondary);
+
+  const billingRow = new ActionRowBuilder().addComponents(
+    affiliateButton,
+    managementButton,
+    manageBillingButton
   );
 
   return {
     content: `<@${user.id}> <@&${ADMIN_ROLE_ID}>`,
     embeds: [embed],
-    components: [row],
+    components: [billingRow, archiveRow],
     allowedMentions: {
       users: [user.id],
       roles: [ADMIN_ROLE_ID],
@@ -943,6 +1242,29 @@ client.on(
       }
 
       if (
+        interaction.customId.startsWith(
+          "billing_plan:"
+        )
+      ) {
+        const planKey =
+          interaction.customId.split(":")[1];
+        await createStripeCheckout(
+          interaction,
+          planKey
+        );
+        return;
+      }
+
+      if (
+        interaction.customId === "billing_manage"
+      ) {
+        await createBillingPortalSession(
+          interaction
+        );
+        return;
+      }
+
+      if (
         interaction.customId ===
         "archive_partnership"
       ) {
@@ -1015,6 +1337,191 @@ client.on(
     }
   }
 );
+
+// ============================================================
+// HTTP SERVER / STRIPE WEBHOOKS
+// ============================================================
+
+const stripeWebhookRepositories = {
+  beginStripeWebhookEvent,
+  getStripeCheckoutSession,
+  markStripeWebhookEventFailed,
+  markStripeWebhookEventProcessed,
+  updateStripeCheckoutSessionStatus,
+  updateSubscriptionInvoiceStatus,
+  upsertBrandSubscription,
+};
+
+function sendHttpResponse(response, statusCode, body) {
+  response.writeHead(statusCode, {
+    "Content-Type": "text/plain; charset=utf-8",
+  });
+  response.end(body);
+}
+
+function readRawRequestBody(request) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+
+    request.on("data", (chunk) => {
+      size += chunk.length;
+
+      if (size > 1024 * 1024) {
+        reject(new Error("Request body too large."));
+        request.destroy();
+        return;
+      }
+
+      chunks.push(chunk);
+    });
+
+    request.on("end", () => {
+      resolve(Buffer.concat(chunks));
+    });
+
+    request.on("error", reject);
+  });
+}
+
+async function handleStripeWebhook(request, response) {
+  if (
+    !STRIPE_WEBHOOK_SECRET ||
+    !STRIPE_WEBHOOK_SECRET.trim()
+  ) {
+    sendHttpResponse(
+      response,
+      500,
+      "STRIPE_WEBHOOK_SECRET is not configured."
+    );
+    return;
+  }
+
+  let rawBody;
+
+  try {
+    rawBody = await readRawRequestBody(request);
+  } catch (error) {
+    sendHttpResponse(response, 413, error.message);
+    return;
+  }
+
+  const signature =
+    request.headers["stripe-signature"];
+  let event;
+
+  try {
+    event = getStripeClient().webhooks.constructEvent(
+      rawBody,
+      signature,
+      STRIPE_WEBHOOK_SECRET
+    );
+  } catch (error) {
+    sendHttpResponse(
+      response,
+      400,
+      `Webhook signature verification failed: ${error.message}`
+    );
+    return;
+  }
+
+  if (event.livemode) {
+    sendHttpResponse(
+      response,
+      400,
+      "Live Stripe events are disabled for this beta deployment."
+    );
+    return;
+  }
+
+  try {
+    processStripeWebhookEvent({
+      db,
+      event,
+      plans: getConfiguredBillingPlans(),
+      repositories: stripeWebhookRepositories,
+    });
+
+    sendHttpResponse(response, 200, "ok");
+  } catch (error) {
+    console.error(
+      "❌ Stripe webhook processing error:",
+      error
+    );
+    sendHttpResponse(response, 500, error.message);
+  }
+}
+
+async function handleHttpRequest(request, response) {
+  const url = new URL(
+    request.url,
+    "http://127.0.0.1"
+  );
+
+  if (
+    request.method === "POST" &&
+    url.pathname === "/stripe/webhook"
+  ) {
+    await handleStripeWebhook(request, response);
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    url.pathname === "/stripe/success"
+  ) {
+    sendHttpResponse(
+      response,
+      200,
+      "Checkout complete. You can return to Discord."
+    );
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    url.pathname === "/stripe/cancel"
+  ) {
+    sendHttpResponse(
+      response,
+      200,
+      "Checkout canceled. You can return to Discord."
+    );
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    url.pathname === "/healthz"
+  ) {
+    sendHttpResponse(response, 200, "ok");
+    return;
+  }
+
+  sendHttpResponse(response, 404, "not found");
+}
+
+function startHttpServer() {
+  const port = Number(HTTP_PORT) || 3000;
+  const server = http.createServer((request, response) => {
+    handleHttpRequest(request, response).catch((error) => {
+      console.error("HTTP server error:", error);
+      sendHttpResponse(
+        response,
+        500,
+        "internal server error"
+      );
+    });
+  });
+
+  server.listen(port, "127.0.0.1", () => {
+    console.log(
+      `✅ HTTP server listening on 127.0.0.1:${port}`
+    );
+  });
+
+  return server;
+}
 
 // ============================================================
 // STARTUP
@@ -1145,4 +1652,5 @@ process.on(
 // LOGIN
 // ============================================================
 
+startHttpServer();
 client.login(DISCORD_TOKEN);

@@ -118,6 +118,91 @@ function initializeSchema(db) {
         ON UPDATE CASCADE
         ON DELETE RESTRICT
     );
+
+    CREATE TABLE IF NOT EXISTS stripe_customers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      discord_user_id TEXT NOT NULL,
+      stripe_customer_id TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (guild_id, discord_user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS stripe_checkout_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      stripe_checkout_session_id TEXT NOT NULL UNIQUE,
+      stripe_customer_id TEXT,
+      conversation_id INTEGER NOT NULL,
+      guild_id TEXT NOT NULL,
+      discord_user_id TEXT NOT NULL,
+      plan_key TEXT NOT NULL,
+      stripe_price_id TEXT NOT NULL,
+      creator_id INTEGER,
+      creator_invite_id INTEGER,
+      creator_invite_code TEXT,
+      status TEXT NOT NULL,
+      url TEXT,
+      expires_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (conversation_id)
+        REFERENCES partnership_conversations(conversation_id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT,
+      FOREIGN KEY (creator_id)
+        REFERENCES creators(id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT,
+      FOREIGN KEY (creator_invite_id)
+        REFERENCES creator_invites(id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT
+    );
+
+    CREATE TABLE IF NOT EXISTS brand_subscriptions (
+      stripe_subscription_id TEXT PRIMARY KEY,
+      stripe_customer_id TEXT NOT NULL,
+      conversation_id INTEGER,
+      guild_id TEXT NOT NULL,
+      discord_user_id TEXT NOT NULL,
+      plan_key TEXT,
+      stripe_price_id TEXT,
+      creator_id INTEGER,
+      creator_invite_id INTEGER,
+      creator_invite_code TEXT,
+      status TEXT NOT NULL,
+      current_period_start TEXT,
+      current_period_end TEXT,
+      cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+      canceled_at TEXT,
+      latest_invoice_id TEXT,
+      last_payment_status TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (conversation_id)
+        REFERENCES partnership_conversations(conversation_id)
+        ON UPDATE CASCADE
+        ON DELETE SET NULL,
+      FOREIGN KEY (creator_id)
+        REFERENCES creators(id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT,
+      FOREIGN KEY (creator_invite_id)
+        REFERENCES creator_invites(id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT
+    );
+
+    CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+      stripe_event_id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      livemode INTEGER NOT NULL,
+      stripe_created_at TEXT,
+      received_at TEXT NOT NULL,
+      processed_at TEXT,
+      processing_error TEXT
+    );
   `);
 }
 
@@ -280,6 +365,283 @@ function migrateConversationsFromJson(db, conversations, guildId) {
   }
 }
 
+function getPartnershipConversationByChannelId(db, channelId) {
+  return db
+    .prepare(`
+      SELECT *
+      FROM partnership_conversations
+      WHERE channel_id = ?
+      LIMIT 1
+    `)
+    .get(channelId);
+}
+
+function getStripeCustomerForDiscordUser(db, guildId, discordUserId) {
+  return db
+    .prepare(`
+      SELECT *
+      FROM stripe_customers
+      WHERE guild_id = ?
+        AND discord_user_id = ?
+      LIMIT 1
+    `)
+    .get(guildId, discordUserId);
+}
+
+function saveStripeCustomer(db, customer) {
+  const timestamp = nowISO();
+
+  db.prepare(`
+    INSERT OR IGNORE INTO stripe_customers (
+      guild_id,
+      discord_user_id,
+      stripe_customer_id,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?)
+  `).run(
+    customer.guildId,
+    customer.discordUserId,
+    customer.stripeCustomerId,
+    timestamp,
+    timestamp
+  );
+
+  return getStripeCustomerForDiscordUser(
+    db,
+    customer.guildId,
+    customer.discordUserId
+  );
+}
+
+function upsertStripeCheckoutSession(db, session) {
+  const timestamp = nowISO();
+
+  db.prepare(`
+    INSERT INTO stripe_checkout_sessions (
+      stripe_checkout_session_id,
+      stripe_customer_id,
+      conversation_id,
+      guild_id,
+      discord_user_id,
+      plan_key,
+      stripe_price_id,
+      creator_id,
+      creator_invite_id,
+      creator_invite_code,
+      status,
+      url,
+      expires_at,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(stripe_checkout_session_id) DO UPDATE SET
+      stripe_customer_id = excluded.stripe_customer_id,
+      conversation_id = excluded.conversation_id,
+      guild_id = excluded.guild_id,
+      discord_user_id = excluded.discord_user_id,
+      plan_key = excluded.plan_key,
+      stripe_price_id = excluded.stripe_price_id,
+      creator_id = excluded.creator_id,
+      creator_invite_id = excluded.creator_invite_id,
+      creator_invite_code = excluded.creator_invite_code,
+      status = excluded.status,
+      url = excluded.url,
+      expires_at = excluded.expires_at,
+      updated_at = excluded.updated_at
+  `).run(
+    session.stripeCheckoutSessionId,
+    session.stripeCustomerId || null,
+    session.conversationId,
+    session.guildId,
+    session.discordUserId,
+    session.planKey,
+    session.stripePriceId,
+    session.creatorId || null,
+    session.creatorInviteId || null,
+    session.creatorInviteCode || null,
+    session.status,
+    session.url || null,
+    session.expiresAt || null,
+    timestamp,
+    timestamp
+  );
+}
+
+function getStripeCheckoutSession(db, stripeCheckoutSessionId) {
+  return db
+    .prepare(`
+      SELECT *
+      FROM stripe_checkout_sessions
+      WHERE stripe_checkout_session_id = ?
+      LIMIT 1
+    `)
+    .get(stripeCheckoutSessionId);
+}
+
+function updateStripeCheckoutSessionStatus(db, session) {
+  const timestamp = nowISO();
+
+  db.prepare(`
+    UPDATE stripe_checkout_sessions
+    SET status = ?,
+      stripe_customer_id = COALESCE(?, stripe_customer_id),
+      updated_at = ?
+    WHERE stripe_checkout_session_id = ?
+  `).run(
+    session.status,
+    session.stripeCustomerId || null,
+    timestamp,
+    session.stripeCheckoutSessionId
+  );
+}
+
+function upsertBrandSubscription(db, subscription) {
+  const timestamp = nowISO();
+
+  db.prepare(`
+    INSERT INTO brand_subscriptions (
+      stripe_subscription_id,
+      stripe_customer_id,
+      conversation_id,
+      guild_id,
+      discord_user_id,
+      plan_key,
+      stripe_price_id,
+      creator_id,
+      creator_invite_id,
+      creator_invite_code,
+      status,
+      current_period_start,
+      current_period_end,
+      cancel_at_period_end,
+      canceled_at,
+      latest_invoice_id,
+      last_payment_status,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(stripe_subscription_id) DO UPDATE SET
+      stripe_customer_id = excluded.stripe_customer_id,
+      conversation_id = COALESCE(
+        excluded.conversation_id,
+        brand_subscriptions.conversation_id
+      ),
+      guild_id = excluded.guild_id,
+      discord_user_id = excluded.discord_user_id,
+      plan_key = excluded.plan_key,
+      stripe_price_id = excluded.stripe_price_id,
+      status = excluded.status,
+      current_period_start = excluded.current_period_start,
+      current_period_end = excluded.current_period_end,
+      cancel_at_period_end = excluded.cancel_at_period_end,
+      canceled_at = excluded.canceled_at,
+      latest_invoice_id = COALESCE(
+        excluded.latest_invoice_id,
+        brand_subscriptions.latest_invoice_id
+      ),
+      last_payment_status = COALESCE(
+        excluded.last_payment_status,
+        brand_subscriptions.last_payment_status
+      ),
+      updated_at = excluded.updated_at
+  `).run(
+    subscription.stripeSubscriptionId,
+    subscription.stripeCustomerId,
+    subscription.conversationId || null,
+    subscription.guildId,
+    subscription.discordUserId,
+    subscription.planKey || null,
+    subscription.stripePriceId || null,
+    subscription.creatorId || null,
+    subscription.creatorInviteId || null,
+    subscription.creatorInviteCode || null,
+    subscription.status,
+    subscription.currentPeriodStart || null,
+    subscription.currentPeriodEnd || null,
+    subscription.cancelAtPeriodEnd ? 1 : 0,
+    subscription.canceledAt || null,
+    subscription.latestInvoiceId || null,
+    subscription.lastPaymentStatus || null,
+    timestamp,
+    timestamp
+  );
+}
+
+function updateSubscriptionInvoiceStatus(db, invoice) {
+  const timestamp = nowISO();
+
+  db.prepare(`
+    UPDATE brand_subscriptions
+    SET latest_invoice_id = ?,
+      last_payment_status = ?,
+      updated_at = ?
+    WHERE stripe_subscription_id = ?
+  `).run(
+    invoice.latestInvoiceId,
+    invoice.lastPaymentStatus,
+    timestamp,
+    invoice.stripeSubscriptionId
+  );
+}
+
+function beginStripeWebhookEvent(db, event) {
+  const timestamp = nowISO();
+
+  db.prepare(`
+    INSERT OR IGNORE INTO stripe_webhook_events (
+      stripe_event_id,
+      type,
+      livemode,
+      stripe_created_at,
+      received_at,
+      processed_at,
+      processing_error
+    )
+    VALUES (?, ?, ?, ?, ?, NULL, NULL)
+  `).run(
+    event.id,
+    event.type,
+    event.livemode ? 1 : 0,
+    event.createdAt || null,
+    timestamp
+  );
+
+  const row = db
+    .prepare(`
+      SELECT *
+      FROM stripe_webhook_events
+      WHERE stripe_event_id = ?
+      LIMIT 1
+    `)
+    .get(event.id);
+
+  return {
+    alreadyProcessed: Boolean(row.processed_at),
+    event: row,
+  };
+}
+
+function markStripeWebhookEventProcessed(db, stripeEventId) {
+  db.prepare(`
+    UPDATE stripe_webhook_events
+    SET processed_at = ?,
+      processing_error = NULL
+    WHERE stripe_event_id = ?
+  `).run(nowISO(), stripeEventId);
+}
+
+function markStripeWebhookEventFailed(db, stripeEventId, error) {
+  db.prepare(`
+    UPDATE stripe_webhook_events
+    SET processing_error = ?
+    WHERE stripe_event_id = ?
+  `).run(String(error.message || error), stripeEventId);
+}
+
 module.exports = {
   openDatabase,
   getDatabasePath,
@@ -288,4 +650,15 @@ module.exports = {
   recordJoinAttribution,
   upsertPartnershipConversation,
   migrateConversationsFromJson,
+  getPartnershipConversationByChannelId,
+  getStripeCustomerForDiscordUser,
+  saveStripeCustomer,
+  upsertStripeCheckoutSession,
+  getStripeCheckoutSession,
+  updateStripeCheckoutSessionStatus,
+  upsertBrandSubscription,
+  updateSubscriptionInvoiceStatus,
+  beginStripeWebhookEvent,
+  markStripeWebhookEventProcessed,
+  markStripeWebhookEventFailed,
 };
