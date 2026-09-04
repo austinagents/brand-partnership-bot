@@ -2626,29 +2626,16 @@ function buildBrandsActivityPage() {
     };
   </script>
 
-  <script src="https://js.stripe.com/dahlia/stripe.js"></script>
-
   <script type="module">
     import {
       DiscordSDK
     } from "/discord-sdk/npm/@discord/embedded-app-sdk@2.5.0/+esm";
 
-    const config = window.__PARTNERLINKS_CONFIG__;
+    const config =
+      window.__PARTNERLINKS_CONFIG__;
 
-    const plans =
-      document.querySelector(".plans");
-    const checkoutShell =
-      document.getElementById("checkout-shell");
-    const checkoutElement =
-      document.getElementById("checkout");
-    const statusElement =
-      document.getElementById("checkout-status");
-    const backButton =
-      document.getElementById("checkout-back");
     const buttons =
       [...document.querySelectorAll(".cta[data-plan]")];
-
-    let embeddedCheckout = null;
 
     if (!config.discordClientId) {
       console.error(
@@ -2658,13 +2645,6 @@ function buildBrandsActivityPage() {
 
     const discordSdk =
       new DiscordSDK(config.discordClientId);
-
-    function setStatus(message, type = "") {
-      statusElement.textContent =
-        message || "";
-      statusElement.dataset.type =
-        type;
-    }
 
     function setButtonsDisabled(
       disabled,
@@ -2691,29 +2671,6 @@ function buildBrandsActivityPage() {
       }
     }
 
-    function showCheckout() {
-      plans.hidden = true;
-      checkoutShell.hidden = false;
-    }
-
-    function showPlans() {
-      if (embeddedCheckout) {
-        try {
-          embeddedCheckout.destroy();
-        } catch (_) {}
-
-        embeddedCheckout = null;
-      }
-
-      checkoutElement.innerHTML = "";
-      setStatus("");
-
-      checkoutShell.hidden = true;
-      plans.hidden = false;
-
-      setButtonsDisabled(false);
-    }
-
     async function parseResponse(response) {
       const data =
         await response
@@ -2734,6 +2691,8 @@ function buildBrandsActivityPage() {
       setButtonsDisabled(true, button);
 
       try {
+        await discordSdk.ready();
+
         const channelId =
           discordSdk.channelId;
 
@@ -2763,72 +2722,23 @@ function buildBrandsActivityPage() {
         const checkout =
           await parseResponse(response);
 
-        if (!checkout.clientSecret) {
+        if (!checkout.url) {
           throw new Error(
-            "Stripe checkout could not be initialized."
+            "Stripe checkout could not be opened."
           );
         }
 
-        if (
-          !config.stripePublishableKey ||
-          typeof window.Stripe !== "function"
-        ) {
-          throw new Error(
-            "Stripe.js is not available."
-          );
-        }
-
-        showCheckout();
-
-        setStatus(
-          "Loading secure checkout…"
-        );
-
-        const stripe =
-          window.Stripe(
-            config.stripePublishableKey
-          );
-
-        embeddedCheckout =
-          await stripe.initEmbeddedCheckout({
-            clientSecret:
-              checkout.clientSecret,
-
-            onComplete: () => {
-              if (embeddedCheckout) {
-                try {
-                  embeddedCheckout.destroy();
-                } catch (_) {}
-
-                embeddedCheckout = null;
-              }
-
-              checkoutElement.innerHTML =
-                "";
-
-              setStatus(
-                "Payment submitted. Stripe will confirm your subscription in Discord.",
-                "success"
-              );
-            },
-          });
-
-        setStatus("");
-
-        embeddedCheckout.mount(
-          "#checkout"
-        );
+        await discordSdk.commands.openExternalLink({
+          url: checkout.url,
+        });
       } catch (error) {
         console.error(error);
 
-        showCheckout();
-
-        setStatus(
+        window.alert(
           error?.message ||
-          "Secure checkout could not be opened.",
-          "error"
+          "Secure checkout could not be opened."
         );
-
+      } finally {
         setButtonsDisabled(false);
       }
     }
@@ -2839,11 +2749,7 @@ function buildBrandsActivityPage() {
         () => openCheckout(button)
       );
     }
-
-    backButton.addEventListener(
-      "click",
-      showPlans
-    );
+  </script>
   </script>
 </body>
 </html>`;
@@ -3139,9 +3045,11 @@ async function handleActivityCheckout(
         plan.key
       );
 
+    const { successUrl, cancelUrl } =
+      buildCheckoutUrls();
+
     const session =
       await stripe.checkout.sessions.create({
-        ui_mode: "embedded_page",
         mode: "subscription",
 
         customer:
@@ -3164,13 +3072,13 @@ async function handleActivityCheckout(
           metadata,
         },
 
-        redirect_on_completion:
-          "never",
+        success_url: successUrl,
+        cancel_url: cancelUrl,
       });
 
-    if (!session.client_secret) {
+    if (!session.url) {
       throw new Error(
-        "Stripe did not return an Embedded Checkout client secret."
+        "Stripe did not return a hosted Checkout URL."
       );
     }
 
@@ -3199,7 +3107,7 @@ async function handleActivityCheckout(
           conversation.creator_invite_code,
         status:
           session.status || "open",
-        url: null,
+        url: session.url,
         expiresAt:
           isoFromStripeTimestamp(
             session.expires_at
@@ -3211,8 +3119,8 @@ async function handleActivityCheckout(
       response,
       200,
       {
-        clientSecret:
-          session.client_secret,
+        url:
+          session.url,
       }
     );
   } catch (error) {
