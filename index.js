@@ -1807,7 +1807,6 @@ function buildBrandsActivityPage() {
 
       .plans {
         height: 100%;
-        max-height: none;
         gap: clamp(16px, 2.2vw, 32px);
       }
 
