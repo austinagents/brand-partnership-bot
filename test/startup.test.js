@@ -289,8 +289,36 @@ test("HTTP routes serve Activity UI and preserve existing endpoints", async () =
     assert.match(root.body, /\$1,000/);
     assert.match(root.body, /height: 100dvh/);
     assert.match(root.body, /overflow: hidden/);
-    assert.match(root.body, /flex: 1 1 auto/);
-    assert.match(root.body, /flex: 0 0 auto/);
+    assert.match(root.body, /align-items: center/);
+    assert.match(root.body, /height: auto/);
+    assert.match(root.body, /max-height: none/);
+    const compactDesktopCss = root.body.slice(
+      root.body.indexOf("@media (max-height: 760px)"),
+      root.body.indexOf("@media (max-width: 800px)")
+    );
+    const mobileCss = root.body.slice(
+      root.body.indexOf("@media (max-width: 800px)")
+    );
+    assert.doesNotMatch(
+      compactDesktopCss,
+      /max-height: none/
+    );
+    assert.match(mobileCss, /max-height: none/);
+    assert.match(
+      root.body,
+      /grid-template-rows:\s+auto\s+var\(--title-row\)\s+auto\s+var\(--description-row\)\s+auto\s+auto\s+auto/
+    );
+    assert.doesNotMatch(
+      root.body,
+      /minmax\(0, 1fr\)\s+var\(--cta-row\)/
+    );
+    assert.match(root.body, /--title-row: 118px/);
+    assert.match(root.body, /--description-row: 112px/);
+    assert.match(root.body, /--features-row: 120px/);
+    assert.match(root.body, /--badge-row: 34px/);
+    assert.match(root.body, /height: var\(--badge-row\)/);
+    assert.match(root.body, /padding: 0 18px/);
+    assert.match(root.body, /margin-top: var\(--cta-gap\)/);
     assert.match(
       root.body,
       /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/

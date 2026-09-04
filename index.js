@@ -1559,6 +1559,7 @@ function buildBrandsActivityPage() {
       display: flex;
       align-items: center;
       justify-content: center;
+      overflow: hidden;
       padding:
         clamp(18px, 3vh, 36px)
         clamp(24px, 4vw, 72px)
@@ -1568,34 +1569,34 @@ function buildBrandsActivityPage() {
     .plans {
       width: 100%;
       max-width: 1760px;
-      height: min(100%, 690px);
-      max-height: 690px;
+      height: auto;
+      max-height: none;
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: clamp(24px, 3vw, 48px);
-      align-items: stretch;
+      align-items: start;
     }
 
     .plan {
       --badge-row: 34px;
       --title-row: 118px;
-      --price-row: 104px;
       --description-row: 112px;
-      --divider-row: 50px;
       --feature-columns: repeat(2, minmax(0, 1fr));
       --feature-gap: clamp(10px, 1.45vh, 18px);
-      --cta-row: clamp(52px, 6.2vh, 78px);
-      height: 100%;
+      --features-row: 120px;
+      --cta-row: 60px;
+      --cta-gap: 24px;
+      height: auto;
       min-height: 0;
       display: grid;
       grid-template-rows:
-        var(--badge-row)
+        auto
         var(--title-row)
-        var(--price-row)
+        auto
         var(--description-row)
-        var(--divider-row)
-        minmax(0, 1fr)
-        var(--cta-row);
+        auto
+        auto
+        auto;
       padding: clamp(24px, 3vw, 44px);
       border: 1px solid var(--accent-border);
       border-radius: 8px;
@@ -1622,7 +1623,7 @@ function buildBrandsActivityPage() {
       display: inline-flex;
       align-items: center;
       align-self: start;
-      margin: 0;
+      margin: 0 0 18px;
       padding: 0 18px;
       border-radius: 999px;
       background: var(--badge-bg);
@@ -1677,12 +1678,14 @@ function buildBrandsActivityPage() {
       height: 1px;
       width: 100%;
       align-self: center;
-      margin: 0;
+      margin: 18px 0 20px;
       background: var(--line);
     }
 
     ul {
       min-height: 0;
+      height: auto;
+      min-height: var(--features-row);
       display: grid;
       grid-template-columns: var(--feature-columns);
       align-content: start;
@@ -1719,7 +1722,7 @@ function buildBrandsActivityPage() {
       align-self: end;
       width: 100%;
       height: var(--cta-row);
-      margin: 0;
+      margin-top: var(--cta-gap);
       border: 0;
       border-radius: 8px;
       background: var(--accent);
@@ -1759,16 +1762,16 @@ function buildBrandsActivityPage() {
       .plan {
         --badge-row: 30px;
         --title-row: 78px;
-        --price-row: 72px;
         --description-row: 62px;
-        --divider-row: 34px;
         --feature-columns: repeat(2, minmax(0, 1fr));
         --feature-gap: clamp(6px, 0.85vh, 9px);
-        --cta-row: clamp(44px, 5.2vh, 52px);
+        --cta-row: 48px;
+        --cta-gap: 20px;
         padding: clamp(18px, 2.2vw, 30px);
       }
 
       .badge {
+        margin-bottom: 10px;
         padding: 0 12px;
         font-size: clamp(10px, 0.82vw, 12px);
       }
@@ -1792,6 +1795,10 @@ function buildBrandsActivityPage() {
       .description {
         font-size: clamp(14px, 1vw, 16px);
         line-height: 1.3;
+      }
+
+      .divider {
+        margin: 10px 0 12px;
       }
 
       ul {
@@ -1825,23 +1832,23 @@ function buildBrandsActivityPage() {
       }
 
       .plans {
-        height: 100%;
+        height: auto;
         gap: clamp(16px, 2.2vw, 32px);
       }
 
       .plan {
         --badge-row: 28px;
         --title-row: 66px;
-        --price-row: 58px;
         --description-row: 50px;
-        --divider-row: 24px;
         --feature-columns: repeat(2, minmax(0, 1fr));
         --feature-gap: clamp(5px, 0.75vh, 7px);
-        --cta-row: clamp(42px, 5.8vh, 50px);
+        --cta-row: 44px;
+        --cta-gap: 20px;
         padding: clamp(18px, 2vw, 28px);
       }
 
       .badge {
+        margin-bottom: 8px;
         padding: 0 10px;
       }
 
@@ -1864,6 +1871,10 @@ function buildBrandsActivityPage() {
       .description {
         font-size: clamp(13px, 0.92vw, 15px);
         line-height: 1.3;
+      }
+
+      .divider {
+        margin: 8px 0 10px;
       }
 
       ul {
@@ -1917,12 +1928,12 @@ function buildBrandsActivityPage() {
       .plan {
         --badge-row: auto;
         --title-row: auto;
-        --price-row: auto;
         --description-row: auto;
-        --divider-row: auto;
         --feature-columns: 1fr;
         --feature-gap: 16px;
+        --features-row: auto;
         --cta-row: 52px;
+        --cta-gap: 24px;
         height: auto;
         min-height: auto;
         display: flex;
@@ -1948,7 +1959,7 @@ function buildBrandsActivityPage() {
       }
 
       .cta {
-        margin-top: auto;
+        margin-top: var(--cta-gap);
       }
 
       h1 {
@@ -1963,7 +1974,525 @@ function buildBrandsActivityPage() {
         min-height: auto;
       }
     }
-  </style>
+  
+    /* PARTNERLINKS_PRICING_LAYOUT_START */
+
+    /*
+      Final desktop pricing layout.
+      Cards are content-sized; Discord viewport height never stretches them.
+      Both plans share identical internal row geometry.
+    */
+
+    main {
+      width: 100%;
+      height: 100dvh;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      padding: 24px 48px 96px;
+    }
+
+    .plans {
+      width: min(100%, 1540px);
+      height: auto;
+      max-height: none;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 28px;
+      align-items: start;
+    }
+
+    .plan {
+      --badge-height: 30px;
+      --title-height: 72px;
+      --price-height: 58px;
+      --description-height: 70px;
+      --features-height: 120px;
+      --cta-height: 50px;
+      --row-gap: 14px;
+
+      width: 100%;
+      height: auto;
+      min-height: 0;
+      box-sizing: border-box;
+
+      display: grid;
+      grid-template-rows:
+        var(--badge-height)
+        var(--title-height)
+        var(--price-height)
+        var(--description-height)
+        1px
+        var(--features-height)
+        var(--cta-height);
+
+      row-gap: var(--row-gap);
+
+      padding: 26px 28px 28px;
+
+      border: 1px solid var(--accent-border);
+      border-radius: 12px;
+      background: var(--card-bg);
+
+      box-shadow:
+        0 18px 48px rgba(0, 0, 0, 0.18);
+    }
+
+    /*
+      Badges are deliberately identical dimensions.
+      Text length does not change card geometry.
+    */
+    .badge {
+      width: 138px;
+      height: var(--badge-height);
+      box-sizing: border-box;
+
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      align-self: start;
+
+      margin: 0;
+      padding: 0 12px;
+
+      border-radius: 999px;
+      background: var(--badge-bg);
+      color: #151a14;
+
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: 0.075em;
+      text-transform: uppercase;
+
+      white-space: nowrap;
+    }
+
+    h1 {
+      align-self: center;
+      margin: 0;
+
+      color: var(--text);
+      font-size: 32px;
+      line-height: 1.05;
+      font-weight: 760;
+      letter-spacing: -0.015em;
+    }
+
+    .price {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      align-self: stretch;
+
+      gap: 9px;
+      margin: 0;
+
+      color: var(--muted);
+    }
+
+    .amount {
+      color: var(--accent);
+      font-size: 56px;
+      line-height: 0.95;
+      font-weight: 780;
+      letter-spacing: -0.025em;
+    }
+
+    .period {
+      margin-top: 12px;
+      font-size: 17px;
+      line-height: 1;
+      font-weight: 600;
+    }
+
+    .description {
+      align-self: start;
+      margin: 0;
+
+      color: var(--body);
+      font-size: 16px;
+      line-height: 1.4;
+      font-weight: 400;
+    }
+
+    .divider {
+      width: 100%;
+      height: 1px;
+
+      align-self: center;
+      margin: 0;
+
+      background: var(--line);
+    }
+
+    /*
+      Exactly three feature rows on desktop.
+      5-item plan leaves the sixth cell empty naturally.
+      No 1fr spacer and no viewport-height expansion.
+    */
+    ul {
+      width: 100%;
+      height: var(--features-height);
+      min-height: 0;
+
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: repeat(3, minmax(0, 1fr));
+
+      column-gap: 24px;
+      row-gap: 0;
+
+      align-content: stretch;
+
+      margin: 0;
+      padding: 0;
+
+      list-style: none;
+    }
+
+    li {
+      min-width: 0;
+
+      display: grid;
+      grid-template-columns: 20px minmax(0, 1fr);
+      gap: 9px;
+      align-items: start;
+      align-content: center;
+
+      color: #e6e9e2;
+
+      font-size: 15px;
+      line-height: 1.25;
+      font-weight: 450;
+    }
+
+    .check {
+      width: 20px;
+      height: 20px;
+
+      display: inline-grid;
+      place-items: center;
+
+      margin-top: 0;
+
+      border-radius: 999px;
+      background: var(--accent);
+      color: #151a14;
+
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .cta {
+      width: 100%;
+      height: var(--cta-height);
+
+      align-self: stretch;
+      margin: 0;
+
+      border: 0;
+      border-radius: 8px;
+
+      background: var(--accent);
+      color: #11150f;
+
+      font: inherit;
+      font-size: 15px;
+      font-weight: 800;
+
+      cursor: pointer;
+
+      transition:
+        filter 150ms ease,
+        transform 150ms ease;
+    }
+
+    .cta:hover {
+      filter: brightness(1.045);
+    }
+
+    .cta:active {
+      transform: translateY(1px);
+    }
+
+    .cta:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+
+    /*
+      Standard Discord Activity desktop height.
+      Same mathematical rows, just scaled down together.
+    */
+    @media (max-height: 980px) and (min-width: 801px) {
+      main {
+        padding: 18px 38px 88px;
+      }
+
+      .plans {
+        width: min(100%, 1420px);
+        gap: 24px;
+      }
+
+      .plan {
+        --badge-height: 28px;
+        --title-height: 64px;
+        --price-height: 52px;
+        --description-height: 60px;
+        --features-height: 108px;
+        --cta-height: 46px;
+        --row-gap: 11px;
+
+        padding: 22px 24px 24px;
+      }
+
+      .badge {
+        width: 128px;
+        padding: 0 10px;
+        font-size: 10px;
+      }
+
+      h1 {
+        font-size: 29px;
+      }
+
+      .amount {
+        font-size: 50px;
+      }
+
+      .period {
+        margin-top: 10px;
+        font-size: 15px;
+      }
+
+      .description {
+        font-size: 14px;
+        line-height: 1.35;
+      }
+
+      ul {
+        column-gap: 20px;
+      }
+
+      li {
+        grid-template-columns: 18px minmax(0, 1fr);
+        gap: 8px;
+        font-size: 13px;
+        line-height: 1.22;
+      }
+
+      .check {
+        width: 18px;
+        height: 18px;
+        font-size: 10px;
+      }
+
+      .cta {
+        font-size: 14px;
+      }
+    }
+
+    /*
+      Short Discord Activity viewport.
+      Do not change structural relationships independently.
+    */
+    @media (max-height: 760px) and (min-width: 801px) {
+      main {
+        padding: 12px 28px 76px;
+      }
+
+      .plans {
+        width: min(100%, 1360px);
+        gap: 20px;
+      }
+
+      .plan {
+        --badge-height: 26px;
+        --title-height: 58px;
+        --price-height: 48px;
+        --description-height: 56px;
+        --features-height: 102px;
+        --cta-height: 44px;
+        --row-gap: 9px;
+
+        padding: 19px 21px 21px;
+      }
+
+      .badge {
+        width: 122px;
+        font-size: 9px;
+      }
+
+      h1 {
+        font-size: 27px;
+      }
+
+      .amount {
+        font-size: 46px;
+      }
+
+      .period {
+        margin-top: 9px;
+        font-size: 14px;
+      }
+
+      .description {
+        font-size: 13px;
+        line-height: 1.32;
+      }
+
+      ul {
+        column-gap: 18px;
+      }
+
+      li {
+        grid-template-columns: 17px minmax(0, 1fr);
+        gap: 7px;
+        font-size: 12px;
+        line-height: 1.2;
+      }
+
+      .check {
+        width: 17px;
+        height: 17px;
+        font-size: 10px;
+      }
+
+      .cta {
+        font-size: 13px;
+      }
+    }
+
+    /*
+      Mobile/narrow Activity:
+      stacked cards, natural content height, scrolling allowed.
+    */
+    @media (max-width: 800px) {
+      html,
+      body {
+        height: auto;
+        min-height: 100%;
+        overflow-x: hidden;
+        overflow-y: auto;
+      }
+
+      main {
+        width: 100%;
+        height: auto;
+        min-height: 100dvh;
+
+        display: block;
+        overflow: visible;
+
+        padding: 18px 16px 88px;
+      }
+
+      .plans {
+        width: 100%;
+        height: auto;
+
+        display: grid;
+        grid-template-columns: 1fr;
+
+        gap: 18px;
+      }
+
+      .plan {
+        --badge-height: 28px;
+        --title-height: auto;
+        --price-height: auto;
+        --description-height: auto;
+        --features-height: auto;
+        --cta-height: 50px;
+        --row-gap: 14px;
+
+        height: auto;
+
+        display: flex;
+        flex-direction: column;
+
+        padding: 22px;
+      }
+
+      .badge {
+        width: auto;
+        min-width: 122px;
+        height: var(--badge-height);
+
+        align-self: flex-start;
+
+        margin: 0 0 18px;
+        padding: 0 12px;
+
+        font-size: 10px;
+      }
+
+      h1 {
+        margin-bottom: 16px;
+        font-size: clamp(28px, 8vw, 36px);
+      }
+
+      .price {
+        height: auto;
+        margin-bottom: 16px;
+      }
+
+      .amount {
+        font-size: clamp(48px, 14vw, 64px);
+      }
+
+      .period {
+        font-size: 16px;
+      }
+
+      .description {
+        margin-bottom: 20px;
+        font-size: 15px;
+      }
+
+      .divider {
+        margin-bottom: 20px;
+      }
+
+      ul {
+        width: 100%;
+        height: auto;
+
+        display: grid;
+        grid-template-columns: 1fr;
+        grid-template-rows: none;
+
+        row-gap: 12px;
+      }
+
+      li {
+        grid-template-columns: 20px 1fr;
+        gap: 10px;
+
+        font-size: 15px;
+        line-height: 1.3;
+      }
+
+      .check {
+        width: 20px;
+        height: 20px;
+        font-size: 12px;
+      }
+
+      .cta {
+        height: var(--cta-height);
+        margin-top: 24px;
+        font-size: 14px;
+      }
+    }
+
+    /* PARTNERLINKS_PRICING_LAYOUT_END */
+
+</style>
 </head>
 <body>
   <main>
