@@ -5,6 +5,7 @@ const path = require("node:path");
 const test = require("node:test");
 
 const {
+  buildCheckoutPrompt,
   completePaidConfirmation,
   getBillingPlans,
   getPlanKeyByPriceId,
@@ -154,6 +155,44 @@ test("maps configured Stripe prices to internal plan keys", () => {
   assert.equal(
     getPlanKeyByPriceId(plans, "price_unknown"),
     null
+  );
+});
+
+test("checkout prompt hides raw Stripe URL from visible text", () => {
+  const plans = testPlans();
+  const prompt = buildCheckoutPrompt(
+    plans.marketplace_affiliate
+  );
+
+  assert.equal(
+    prompt,
+    [
+      "Marketplace + Affiliate Access",
+      "$500/month",
+      "",
+      "Click below to continue to secure checkout.",
+    ].join("\n")
+  );
+  assert.equal(
+    prompt.includes("checkout.stripe.com"),
+    false
+  );
+});
+
+test("management checkout prompt uses monthly management copy", () => {
+  const plans = testPlans();
+  const prompt = buildCheckoutPrompt(
+    plans.marketplace_management
+  );
+
+  assert.equal(
+    prompt,
+    [
+      "Marketplace + Management",
+      "$1,000/month",
+      "",
+      "Click below to continue to secure checkout.",
+    ].join("\n")
   );
 });
 

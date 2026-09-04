@@ -55,6 +55,7 @@ const {
   PLAN_MARKETPLACE_AFFILIATE,
   PLAN_MARKETPLACE_MANAGEMENT,
   buildBillingMetadata,
+  buildCheckoutPrompt,
   completePaidConfirmation,
   failPaidConfirmation,
   getBillingPlans,
@@ -342,8 +343,15 @@ async function createStripeCheckout(interaction, planKey) {
   });
 
   await interaction.editReply({
-    content:
-      `Checkout for ${plan.label} (${plan.amountLabel}): ${session.url}`,
+    content: buildCheckoutPrompt(plan),
+    components: [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setLabel("Continue to Secure Checkout")
+          .setStyle(ButtonStyle.Link)
+          .setURL(session.url)
+      ),
+    ],
   });
 }
 

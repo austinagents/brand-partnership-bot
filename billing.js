@@ -70,6 +70,15 @@ function getPlanLabel(planKey) {
   return PLAN_LABELS[planKey] || planKey;
 }
 
+function buildCheckoutPrompt(plan) {
+  return [
+    plan.label,
+    plan.amountLabel.replace("/mo", "/month"),
+    "",
+    "Click below to continue to secure checkout.",
+  ].join("\n");
+}
+
 function compactMetadata(metadata) {
   const compacted = {};
 
@@ -502,6 +511,7 @@ function failPaidConfirmation({
 module.exports = {
   PLAN_MARKETPLACE_AFFILIATE,
   PLAN_MARKETPLACE_MANAGEMENT,
+  buildCheckoutPrompt,
   buildBillingMetadata,
   completePaidConfirmation,
   failPaidConfirmation,

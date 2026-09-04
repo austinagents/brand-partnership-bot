@@ -23,6 +23,10 @@ function chainableBuilder() {
       return this;
     }
 
+    setURL() {
+      return this;
+    }
+
     setDisabled() {
       return this;
     }
@@ -106,6 +110,7 @@ function fakeDiscordModule() {
     ButtonStyle: {
       Primary: 1,
       Secondary: 2,
+      Link: 5,
     },
     MessageFlags: {
       Ephemeral: 64,
