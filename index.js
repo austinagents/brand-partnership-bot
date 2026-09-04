@@ -1426,7 +1426,7 @@ async function sendPaidSubscriptionConfirmation(
       "",
       `Your ${confirmation.planLabel} plan is now active.`,
       "",
-      "We've received your payment and your PartnerLinks onboarding will continue here.",
+      "We've received your payment and your PartnerLinks onboarding will continue here. Please allow our team up to 24 hours to review and list your product.",
     ].join("\n"),
   });
 }
