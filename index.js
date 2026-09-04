@@ -3367,6 +3367,23 @@ async function handleActivityCheckout(
         ? body.channel_id.trim()
         : "";
 
+    const shop =
+      body.shop &&
+      typeof body.shop === "object" &&
+      !Array.isArray(body.shop)
+        ? body.shop
+        : null;
+
+    const products =
+      Array.isArray(body.products)
+        ? body.products
+        : [];
+
+    const sampleCapacity =
+      typeof body.sample_capacity === "string"
+        ? body.sample_capacity.trim()
+        : "";
+
     if (!planKey || !channelId) {
       sendOnboardingJsonResponse(
         response,
