@@ -2732,7 +2732,11 @@ function buildBrandsActivityPage() {
       discordSdk =
         new DiscordSDK(config.discordClientId);
 
+      setStatus("Connecting to Discord…");
+
       await discordSdk.ready();
+
+      setStatus("Authorizing Discord account…");
 
       const authorization =
         await discordSdk.commands.authorize({
@@ -2749,6 +2753,8 @@ function buildBrandsActivityPage() {
           "Discord authorization failed."
         );
       }
+
+      setStatus("Exchanging Discord authorization…");
 
       const response = await fetch(
         "/discord/activity-token",
@@ -2775,6 +2781,8 @@ function buildBrandsActivityPage() {
 
       discordAccessToken =
         token.access_token;
+
+      setStatus("Authenticating Discord session…");
 
       const auth =
         await discordSdk.commands.authenticate({
