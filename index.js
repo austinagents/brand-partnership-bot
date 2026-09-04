@@ -302,7 +302,6 @@ function adminCategoryPermissions(guild) {
         PermissionFlagsBits.EmbedLinks,
         PermissionFlagsBits.ManageMessages,
         PermissionFlagsBits.ManageChannels,
-        PermissionFlagsBits.ManageRoles,
       ],
     },
   ];
@@ -361,7 +360,6 @@ function activeChannelPermissions(guild, userId) {
         PermissionFlagsBits.EmbedLinks,
         PermissionFlagsBits.ManageMessages,
         PermissionFlagsBits.ManageChannels,
-        PermissionFlagsBits.ManageRoles,
       ],
     },
   ];
