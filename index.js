@@ -15,7 +15,9 @@ const {
   ButtonStyle,
   ActionRowBuilder,
   EmbedBuilder,
+  InteractionResponseType,
   MessageFlags,
+  Routes,
 } = require("discord.js");
 
 const {
@@ -400,6 +402,38 @@ async function createBillingPortalSession(interaction) {
     content:
       `Manage billing: ${portalSession.url}`,
   });
+}
+
+async function launchPartnerLinksActivity(interaction) {
+  const { allowed } =
+    requireBillingConversation(interaction);
+
+  if (!allowed) {
+    await interaction.reply({
+      content:
+        "Only the person who opened this partnership conversation can view plans from here.",
+      flags: MessageFlags.Ephemeral,
+    });
+
+    return;
+  }
+
+  if (typeof interaction.launchActivity === "function") {
+    await interaction.launchActivity();
+    return;
+  }
+
+  await interaction.client.rest.post(
+    Routes.interactionCallback(
+      interaction.id,
+      interaction.token
+    ),
+    {
+      body: {
+        type: InteractionResponseType.LaunchActivity,
+      },
+    }
+  );
 }
 
 // ============================================================
@@ -833,20 +867,9 @@ function buildConversationWelcome(user, conversationNumber) {
     archiveButton
   );
 
-  const affiliateButton = new ButtonBuilder()
-    .setCustomId(
-      `billing_plan:${PLAN_MARKETPLACE_AFFILIATE}`
-    )
-    .setLabel(
-      "Marketplace + Affiliate Access - $500/mo"
-    )
-    .setStyle(ButtonStyle.Primary);
-
-  const managementButton = new ButtonBuilder()
-    .setCustomId(
-      `billing_plan:${PLAN_MARKETPLACE_MANAGEMENT}`
-    )
-    .setLabel("Marketplace + Management - $1,000/mo")
+  const plansButton = new ButtonBuilder()
+    .setCustomId("launch_partnerlinks_activity")
+    .setLabel("View PartnerLinks Plans")
     .setStyle(ButtonStyle.Primary);
 
   const manageBillingButton = new ButtonBuilder()
@@ -855,8 +878,7 @@ function buildConversationWelcome(user, conversationNumber) {
     .setStyle(ButtonStyle.Secondary);
 
   const billingRow = new ActionRowBuilder().addComponents(
-    affiliateButton,
-    managementButton,
+    plansButton,
     manageBillingButton
   );
 
@@ -1271,6 +1293,14 @@ client.on(
       }
 
       if (
+        interaction.customId ===
+        "launch_partnerlinks_activity"
+      ) {
+        await launchPartnerLinksActivity(interaction);
+        return;
+      }
+
+      if (
         interaction.customId === "billing_manage"
       ) {
         await createBillingPortalSession(
@@ -1472,6 +1502,291 @@ function buildStripeSuccessPage() {
 </html>`;
 }
 
+function buildBrandsActivityPage() {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PartnerLinks Plans</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #080c0a;
+      color: #f3f5f1;
+      --page: #080c0a;
+      --card-green: #101713;
+      --card-gold: #15130f;
+      --text: #f4f6f2;
+      --body: #c8cec7;
+      --muted: #8c948d;
+      --line: rgba(229, 232, 221, 0.12);
+      --green: #9bc9a7;
+      --green-border: rgba(143, 188, 154, 0.5);
+      --green-badge: #a8cdb0;
+      --gold: #d5bd79;
+      --gold-border: rgba(209, 181, 112, 0.55);
+      --gold-badge: #d8bf78;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      min-height: 100%;
+      background: var(--page);
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 32px 18px;
+      background:
+        radial-gradient(circle at 50% -20%, rgba(36, 57, 43, 0.32), transparent 42%),
+        linear-gradient(180deg, #0b100d 0%, #070908 100%);
+    }
+
+    main {
+      width: min(100%, 980px);
+    }
+
+    .plans {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px;
+      align-items: stretch;
+    }
+
+    .plan {
+      min-height: 600px;
+      display: flex;
+      flex-direction: column;
+      padding: 32px;
+      border: 1px solid var(--accent-border);
+      border-radius: 8px;
+      background: var(--card-bg);
+    }
+
+    .plan.marketplace {
+      --accent: var(--green);
+      --accent-border: var(--green-border);
+      --badge-bg: var(--green-badge);
+      --card-bg: var(--card-green);
+    }
+
+    .plan.management {
+      --accent: var(--gold);
+      --accent-border: var(--gold-border);
+      --badge-bg: var(--gold-badge);
+      --card-bg: var(--card-gold);
+    }
+
+    .badge {
+      width: fit-content;
+      margin-bottom: 22px;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: var(--badge-bg);
+      color: #151a14;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      color: var(--text);
+      font-size: 32px;
+      line-height: 1.08;
+      font-weight: 760;
+      letter-spacing: 0;
+    }
+
+    .price {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin-top: 24px;
+      color: var(--muted);
+    }
+
+    .amount {
+      color: var(--accent);
+      font-size: 58px;
+      line-height: 0.95;
+      font-weight: 780;
+      letter-spacing: 0;
+    }
+
+    .period {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .description {
+      min-height: 84px;
+      margin: 22px 0 0;
+      color: var(--body);
+      font-size: 17px;
+      line-height: 1.5;
+    }
+
+    .divider {
+      height: 1px;
+      margin: 30px 0 28px;
+      background: var(--line);
+    }
+
+    ul {
+      display: grid;
+      gap: 16px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 12px;
+      align-items: start;
+      color: #e6e9e2;
+      font-size: 15px;
+      line-height: 1.35;
+    }
+
+    .check {
+      width: 22px;
+      height: 22px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #151a14;
+      font-size: 14px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .cta {
+      width: 100%;
+      min-height: 52px;
+      margin-top: auto;
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #11150f;
+      font: inherit;
+      font-size: 15px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: filter 150ms ease, transform 150ms ease;
+    }
+
+    .cta:hover {
+      filter: brightness(1.05);
+    }
+
+    .cta:active {
+      transform: translateY(1px);
+    }
+
+    .cta:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+
+    @media (max-width: 760px) {
+      body {
+        align-items: start;
+        padding: 18px 14px 26px;
+      }
+
+      .plans {
+        grid-template-columns: 1fr;
+        gap: 16px;
+      }
+
+      .plan {
+        min-height: auto;
+        padding: 24px;
+      }
+
+      h1 {
+        font-size: 28px;
+      }
+
+      .amount {
+        font-size: 48px;
+      }
+
+      .description {
+        min-height: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="plans" aria-label="PartnerLinks subscription plans">
+      <article class="plan marketplace">
+        <div class="badge">Marketplace</div>
+        <h1>Marketplace +<br>Affiliate Access</h1>
+        <div class="price">
+          <span class="amount">$500</span>
+          <span class="period">/ month</span>
+        </div>
+        <p class="description">Access PartnerLinks' creator marketplace and the tools to build and grow your affiliate program.</p>
+        <div class="divider" aria-hidden="true"></div>
+        <ul>
+          <li><span class="check" aria-hidden="true">✓</span><span>List your products in the PartnerLinks marketplace</span></li>
+          <li><span class="check" aria-hidden="true">✓</span><span>Connect with vetted creators</span></li>
+          <li><span class="check" aria-hidden="true">✓</span><span>Receive creator sample requests</span></li>
+          <li><span class="check" aria-hidden="true">✓</span><span>Launch exclusive creator campaigns</span></li>
+          <li><span class="check" aria-hidden="true">✓</span><span>Access the PartnerLinks creator network</span></li>
+        </ul>
+        <button class="cta" type="button" data-plan="marketplace_affiliate">Continue to Secure Checkout →</button>
+      </article>
+
+      <article class="plan management">
+        <div class="badge">Most Popular</div>
+        <h1>Marketplace +<br>Management</h1>
+        <div class="price">
+          <span class="amount">$1,000</span>
+          <span class="period">/ month</span>
+        </div>
+        <p class="description">Everything in Affiliate Access, plus hands-on management from our team to actively grow your affiliate program.</p>
+        <div class="divider" aria-hidden="true"></div>
+        <ul>
+          <li><span class="check" aria-hidden="true">✓</span><span>Everything in Affiliate Access</span></li>
+          <li><span class="check" aria-hidden="true">✓</span><span>Creator sourcing &amp; outreach</span></li>
+          <li><span class="check" aria-hidden="true">✓</span><span>Affiliate recruitment &amp; onboarding</span></li>
+          <li><span class="check" aria-hidden="true">✓</span><span>Campaign strategy &amp; optimization</span></li>
+          <li><span class="check" aria-hidden="true">✓</span><span>Ongoing program management</span></li>
+          <li><span class="check" aria-hidden="true">✓</span><span>Dedicated PartnerLinks support</span></li>
+        </ul>
+        <button class="cta" type="button" data-plan="marketplace_management">Continue to Secure Checkout →</button>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    document.querySelectorAll(".cta").forEach((button) => {
+      button.addEventListener("click", () => {
+        console.log("PartnerLinks plan selected:", button.dataset.plan);
+      });
+    });
+  </script>
+</body>
+</html>`;
+}
+
 function readRawRequestBody(request) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -1610,6 +1925,18 @@ async function handleHttpRequest(request, response) {
     url.pathname === "/stripe/webhook"
   ) {
     await handleStripeWebhook(request, response);
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    url.pathname === "/brands"
+  ) {
+    sendHtmlResponse(
+      response,
+      200,
+      buildBrandsActivityPage()
+    );
     return;
   }
 
