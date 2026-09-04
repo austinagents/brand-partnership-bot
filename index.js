@@ -2915,6 +2915,416 @@ async function readJsonRequestBody(request) {
   }
 }
 
+
+const FASTMOSS_API_BASE_URL =
+  "https://openapi.fastmoss.com";
+
+function getFastMossClientSecret() {
+  const secret =
+    process.env.FASTMOSS_CLIENT_SECRET?.trim();
+
+  if (!secret) {
+    throw new Error(
+      "FASTMOSS_CLIENT_SECRET is not configured."
+    );
+  }
+
+  return secret;
+}
+
+async function fastMossPost(
+  pathname,
+  payload
+) {
+  const response = await fetch(
+    `${FASTMOSS_API_BASE_URL}${pathname}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json",
+        Authorization:
+          `Bearer ${getFastMossClientSecret()}`,
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  let result;
+
+  try {
+    result = await response.json();
+  } catch {
+    throw new Error(
+      `FastMoss returned invalid JSON for ${pathname}.`
+    );
+  }
+
+  if (
+    !response.ok ||
+    result.code !== 0
+  ) {
+    throw new Error(
+      result.message ||
+        `FastMoss request failed for ${pathname}.`
+    );
+  }
+
+  return result.data || {};
+}
+
+function sendOnboardingJsonResponse(
+  response,
+  statusCode,
+  payload
+) {
+  const body = JSON.stringify(payload);
+
+  response.writeHead(statusCode, {
+    "Content-Type":
+      "application/json; charset=utf-8",
+    "Content-Length":
+      Buffer.byteLength(body),
+    "Cache-Control": "no-store",
+    "Access-Control-Allow-Origin":
+      "https://partnerlinks.app",
+    "Access-Control-Allow-Methods":
+      "POST, OPTIONS",
+    "Access-Control-Allow-Headers":
+      "Content-Type",
+    Vary: "Origin",
+  });
+
+  response.end(body);
+}
+
+function getValidOnboardingConversation(
+  channelId
+) {
+  const conversation =
+    getPartnershipConversationByChannelId(
+      db,
+      channelId
+    );
+
+  if (!conversation) {
+    return {
+      status: 404,
+      error:
+        "No PartnerLinks partnership was found for this channel.",
+    };
+  }
+
+  if (
+    conversation.guild_id !== GUILD_ID
+  ) {
+    return {
+      status: 403,
+      error:
+        "This partnership does not belong to this PartnerLinks server.",
+    };
+  }
+
+  if (
+    conversation.status !== "active"
+  ) {
+    return {
+      status: 409,
+      error:
+        "This partnership is no longer active.",
+    };
+  }
+
+  return {
+    conversation,
+  };
+}
+
+async function handleOnboardingShopSearch(
+  request,
+  response
+) {
+  try {
+    const body =
+      await readJsonRequestBody(request);
+
+    const channelId =
+      typeof body.channel_id === "string"
+        ? body.channel_id.trim()
+        : "";
+
+    const shopName =
+      typeof body.shop_name === "string"
+        ? body.shop_name.trim()
+        : "";
+
+    if (!channelId || !shopName) {
+      sendOnboardingJsonResponse(
+        response,
+        400,
+        {
+          error:
+            "Partnership channel and TikTok Shop name are required.",
+        }
+      );
+      return;
+    }
+
+    const validation =
+      getValidOnboardingConversation(
+        channelId
+      );
+
+    if (validation.error) {
+      sendOnboardingJsonResponse(
+        response,
+        validation.status,
+        {
+          error: validation.error,
+        }
+      );
+      return;
+    }
+
+    const data = await fastMossPost(
+      "/shop/v1/search",
+      {
+        filter: {
+          region: "US",
+          seller_name: shopName,
+        },
+        page: 1,
+        pagesize: 10,
+      }
+    );
+
+    const shops = Array.isArray(data.list)
+      ? data.list
+      : [];
+
+    if (!shops.length) {
+      sendOnboardingJsonResponse(
+        response,
+        404,
+        {
+          error:
+            "No TikTok Shop was found with that name.",
+        }
+      );
+      return;
+    }
+
+    const exactMatch =
+      shops.find(
+        (shop) =>
+          String(shop.name || "")
+            .trim()
+            .toLowerCase() ===
+          shopName.toLowerCase()
+      ) || shops[0];
+
+    sendOnboardingJsonResponse(
+      response,
+      200,
+      {
+        shop: {
+          seller_id:
+            String(
+              exactMatch.seller_id || ""
+            ),
+          name:
+            exactMatch.name || "",
+          brand:
+            exactMatch.brand || "",
+          region:
+            exactMatch.region || "",
+          shop_rating:
+            exactMatch.shop_rating ?? null,
+          total_units_sold:
+            exactMatch.total_units_sold ??
+            null,
+          on_sale_product_count:
+            exactMatch.on_sale_product_count ??
+            null,
+        },
+      }
+    );
+  } catch (error) {
+    console.error(
+      "Onboarding shop search error:",
+      error
+    );
+
+    sendOnboardingJsonResponse(
+      response,
+      500,
+      {
+        error:
+          "TikTok Shop lookup could not be completed. Please try again.",
+      }
+    );
+  }
+}
+
+async function handleOnboardingProducts(
+  request,
+  response
+) {
+  try {
+    const body =
+      await readJsonRequestBody(request);
+
+    const channelId =
+      typeof body.channel_id === "string"
+        ? body.channel_id.trim()
+        : "";
+
+    const sellerId =
+      typeof body.seller_id === "string"
+        ? body.seller_id.trim()
+        : "";
+
+    if (!channelId || !sellerId) {
+      sendOnboardingJsonResponse(
+        response,
+        400,
+        {
+          error:
+            "Partnership channel and seller ID are required.",
+        }
+      );
+      return;
+    }
+
+    const validation =
+      getValidOnboardingConversation(
+        channelId
+      );
+
+    if (validation.error) {
+      sendOnboardingJsonResponse(
+        response,
+        validation.status,
+        {
+          error: validation.error,
+        }
+      );
+      return;
+    }
+
+    const productData =
+      await fastMossPost(
+        "/shop/v1/productList",
+        {
+          filter: {
+            seller_id: sellerId,
+          },
+          page: 1,
+          pagesize: 100,
+        }
+      );
+
+    const products =
+      Array.isArray(productData.list)
+        ? productData.list
+        : [];
+
+    const enrichedProducts = [];
+
+    for (const product of products) {
+      let enrichment = null;
+
+      try {
+        const imageData =
+          await fastMossPost(
+            "/product/v1/search",
+            {
+              filter: {
+                product_id:
+                  String(
+                    product.product_id
+                  ),
+              },
+              page: 1,
+              pagesize: 1,
+            }
+          );
+
+        enrichment =
+          Array.isArray(imageData.list)
+            ? imageData.list[0] || null
+            : null;
+      } catch (error) {
+        console.warn(
+          `FastMoss image enrichment failed for product ${product.product_id}:`,
+          error.message
+        );
+      }
+
+      enrichedProducts.push({
+        product_id:
+          String(product.product_id),
+        seller_id:
+          String(product.seller_id),
+        title:
+          product.title || "",
+        price:
+          product.price ||
+          enrichment?.price ||
+          "",
+        cover:
+          enrichment?.cover || null,
+        units_sold:
+          product.units_sold ?? null,
+        day7_units_sold:
+          product.day7_units_sold ??
+          null,
+        product_rating:
+          product.product_rating ??
+          enrichment?.product_rating ??
+          null,
+        sku_count:
+          product.sku_count ?? null,
+        tiktok_url:
+          product.tiktok_url ||
+          enrichment?.tiktok_url ||
+          "",
+        off_shelves:
+          enrichment?.off_shelves ?? null,
+        commission_rate:
+          enrichment?.commission_rate ??
+          null,
+      });
+    }
+
+    sendOnboardingJsonResponse(
+      response,
+      200,
+      {
+        seller_id: sellerId,
+        total:
+          enrichedProducts.length,
+        products:
+          enrichedProducts,
+      }
+    );
+  } catch (error) {
+    console.error(
+      "Onboarding product loading error:",
+      error
+    );
+
+    sendOnboardingJsonResponse(
+      response,
+      500,
+      {
+        error:
+          "TikTok Shop products could not be loaded. Please try again.",
+      }
+    );
+  }
+}
+
 async function handleActivityCheckout(
   request,
   response
@@ -3151,6 +3561,52 @@ async function handleHttpRequest(request, response) {
     url.pathname === "/stripe/webhook"
   ) {
     await handleStripeWebhook(request, response);
+    return;
+  }
+
+  if (
+    request.method === "OPTIONS" &&
+    (
+      url.pathname ===
+        "/api/onboarding/shop-search" ||
+      url.pathname ===
+        "/api/onboarding/products"
+    )
+  ) {
+    response.writeHead(204, {
+      "Access-Control-Allow-Origin":
+        "https://partnerlinks.app",
+      "Access-Control-Allow-Methods":
+        "POST, OPTIONS",
+      "Access-Control-Allow-Headers":
+        "Content-Type",
+      Vary: "Origin",
+    });
+    response.end();
+    return;
+  }
+
+  if (
+    request.method === "POST" &&
+    url.pathname ===
+      "/api/onboarding/shop-search"
+  ) {
+    await handleOnboardingShopSearch(
+      request,
+      response
+    );
+    return;
+  }
+
+  if (
+    request.method === "POST" &&
+    url.pathname ===
+      "/api/onboarding/products"
+  ) {
+    await handleOnboardingProducts(
+      request,
+      response
+    );
     return;
   }
 
