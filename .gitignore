@@ -3,3 +3,5 @@ node_modules/
 .DS_Store
 npm-debug.log*
 data/
+conversations.json
+state.json
