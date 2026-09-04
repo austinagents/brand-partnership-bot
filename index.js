@@ -3297,15 +3297,21 @@ async function handleOnboardingProducts(
       });
     }
 
+    const activeProducts =
+      enrichedProducts.filter(
+        (product) =>
+          product.off_shelves !== 1
+      );
+
     sendOnboardingJsonResponse(
       response,
       200,
       {
         seller_id: sellerId,
         total:
-          enrichedProducts.length,
+          activeProducts.length,
         products:
-          enrichedProducts,
+          activeProducts,
       }
     );
   } catch (error) {
