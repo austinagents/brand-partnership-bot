@@ -3168,7 +3168,8 @@ async function handleHttpRequest(request, response) {
   if (
     request.method === "GET" &&
     (url.pathname === "/" ||
-      url.pathname === "/brands")
+      url.pathname === "/brands" ||
+      url.pathname === "/brand-onboarding")
   ) {
     sendHtmlResponse(
       response,
