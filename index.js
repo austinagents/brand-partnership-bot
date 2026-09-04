@@ -1770,7 +1770,7 @@ function buildBrandsActivityPage() {
       }
 
       ul {
-        flex: 0 0 auto;
+        flex: 1 1 auto;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: clamp(6px, 0.85vh, 9px);
       }
@@ -1844,7 +1844,7 @@ function buildBrandsActivityPage() {
       }
 
       ul {
-        flex: 0 0 auto;
+        flex: 1 1 auto;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: clamp(6px, 0.9vh, 9px);
       }
