@@ -50,6 +50,8 @@ const {
   PLAN_MARKETPLACE_AFFILIATE,
   PLAN_MARKETPLACE_MANAGEMENT,
   buildBillingMetadata,
+  completePaidConfirmation,
+  failPaidConfirmation,
   getBillingPlans,
   getPlanByKey,
   processStripeWebhookEvent,
@@ -1350,13 +1352,111 @@ const stripeWebhookRepositories = {
   updateStripeCheckoutSessionStatus,
   updateSubscriptionInvoiceStatus,
   upsertBrandSubscription,
+  getBrandSubscription,
+  getPartnershipConversationById,
+  claimStripePaidConfirmation,
+  markStripePaidConfirmationSent,
+  markStripePaidConfirmationFailed,
 };
+
+async function sendPaidSubscriptionConfirmation(
+  confirmation
+) {
+  const channel = await client.channels.fetch(
+    confirmation.channelId
+  );
+
+  if (
+    !channel ||
+    channel.type !== ChannelType.GuildText
+  ) {
+    throw new Error(
+      `Partnership channel ${confirmation.channelId} is unavailable.`
+    );
+  }
+
+  return channel.send({
+    content: [
+      "✅ **Subscription Active**",
+      "",
+      `Your ${confirmation.planLabel} plan is now active.`,
+      "",
+      "We've received your payment and your PartnerLinks onboarding will continue here.",
+    ].join("\n"),
+  });
+}
 
 function sendHttpResponse(response, statusCode, body) {
   response.writeHead(statusCode, {
     "Content-Type": "text/plain; charset=utf-8",
   });
   response.end(body);
+}
+
+function sendHtmlResponse(response, statusCode, body) {
+  response.writeHead(statusCode, {
+    "Content-Type": "text/html; charset=utf-8",
+  });
+  response.end(body);
+}
+
+function buildStripeSuccessPage() {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Payment confirmed | PartnerLinks</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #09090b;
+      color: #f4f4f5;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      background: #09090b;
+    }
+
+    main {
+      width: min(100% - 40px, 560px);
+    }
+
+    .brand {
+      margin-bottom: 24px;
+      color: #a1a1aa;
+      font-size: 14px;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      margin: 0 0 16px;
+      font-size: 40px;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0;
+      color: #d4d4d8;
+      font-size: 18px;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand">PartnerLinks</div>
+    <h1>Payment confirmed</h1>
+    <p>Your PartnerLinks subscription was successfully processed.<br>You can close this window and return to Discord. A confirmation is waiting for you there.</p>
+  </main>
+</body>
+</html>`;
 }
 
 function readRawRequestBody(request) {
@@ -1435,12 +1535,46 @@ async function handleStripeWebhook(request, response) {
   }
 
   try {
-    processStripeWebhookEvent({
+    const result = processStripeWebhookEvent({
       db,
       event,
       plans: getConfiguredBillingPlans(),
       repositories: stripeWebhookRepositories,
     });
+
+    if (
+      result.status ===
+      "pending_discord_confirmation"
+    ) {
+      try {
+        const message =
+          await sendPaidSubscriptionConfirmation(
+            result.paidConfirmation
+          );
+
+        completePaidConfirmation({
+          db,
+          stripeEventId:
+            result.paidConfirmation.stripeEventId,
+          stripeInvoiceId:
+            result.paidConfirmation.stripeInvoiceId,
+          discordMessageId: message.id,
+          repositories: stripeWebhookRepositories,
+        });
+      } catch (error) {
+        failPaidConfirmation({
+          db,
+          stripeEventId:
+            result.paidConfirmation.stripeEventId,
+          stripeInvoiceId:
+            result.paidConfirmation.stripeInvoiceId,
+          error,
+          repositories: stripeWebhookRepositories,
+        });
+
+        throw error;
+      }
+    }
 
     sendHttpResponse(response, 200, "ok");
   } catch (error) {
@@ -1470,10 +1604,10 @@ async function handleHttpRequest(request, response) {
     request.method === "GET" &&
     url.pathname === "/stripe/success"
   ) {
-    sendHttpResponse(
+    sendHtmlResponse(
       response,
       200,
-      "Checkout complete. You can return to Discord."
+      buildStripeSuccessPage()
     );
     return;
   }

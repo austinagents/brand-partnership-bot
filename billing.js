@@ -66,6 +66,10 @@ function getPlanKeyByPriceId(plans, priceId) {
   return null;
 }
 
+function getPlanLabel(planKey) {
+  return PLAN_LABELS[planKey] || planKey;
+}
+
 function compactMetadata(metadata) {
   const compacted = {};
 
@@ -273,6 +277,7 @@ function processStripeWebhookEvent({
     db.exec("BEGIN");
 
     const object = event.data.object;
+    let paidConfirmation = null;
 
     if (event.type === "checkout.session.completed") {
       repositories.updateStripeCheckoutSessionStatus(db, {
@@ -320,10 +325,88 @@ function processStripeWebhookEvent({
         db,
         subscription
       );
-    } else if (
-      event.type === "invoice.paid" ||
-      event.type === "invoice.payment_failed"
-    ) {
+    } else if (event.type === "invoice.paid") {
+      const stripeSubscriptionId =
+        subscriptionIdFromInvoice(object);
+
+      if (!stripeSubscriptionId) {
+        throw new Error(
+          "Paid invoice missing Stripe subscription id."
+        );
+      }
+
+      repositories.updateSubscriptionInvoiceStatus(db, {
+        stripeSubscriptionId,
+        latestInvoiceId: object.id,
+        lastPaymentStatus: "paid",
+      });
+
+      const subscription =
+        repositories.getBrandSubscription(
+          db,
+          stripeSubscriptionId
+        );
+
+      if (!subscription) {
+        throw new Error(
+          `No local subscription found for paid invoice ${object.id}.`
+        );
+      }
+
+      if (subscription.status !== "active") {
+        throw new Error(
+          `Paid invoice ${object.id} is for non-active subscription ${subscription.status}.`
+        );
+      }
+
+      if (!subscription.conversation_id) {
+        throw new Error(
+          `No conversation id stored for paid invoice ${object.id}.`
+        );
+      }
+
+      const conversation =
+        repositories.getPartnershipConversationById(
+          db,
+          subscription.conversation_id
+        );
+
+      if (!conversation || !conversation.channel_id) {
+        throw new Error(
+          `No partnership channel mapping found for paid invoice ${object.id}.`
+        );
+      }
+
+      const claimed =
+        repositories.claimStripePaidConfirmation(db, {
+          stripeInvoiceId: object.id,
+          stripeSubscriptionId,
+          conversationId:
+            subscription.conversation_id,
+          channelId: conversation.channel_id,
+          planKey: subscription.plan_key,
+        });
+
+      if (claimed.claimed) {
+        paidConfirmation = {
+          stripeEventId: event.id,
+          stripeInvoiceId: object.id,
+          stripeSubscriptionId,
+          channelId: conversation.channel_id,
+          planKey: subscription.plan_key,
+          planLabel: getPlanLabel(subscription.plan_key),
+        };
+      } else if (
+        claimed.notification &&
+        claimed.notification.status === "sending"
+      ) {
+        db.exec("COMMIT");
+
+        return {
+          status: "confirmation_in_progress",
+        };
+      }
+    } else if (event.type === "invoice.payment_failed") {
       const stripeSubscriptionId =
         subscriptionIdFromInvoice(object);
 
@@ -331,12 +414,18 @@ function processStripeWebhookEvent({
         repositories.updateSubscriptionInvoiceStatus(db, {
           stripeSubscriptionId,
           latestInvoiceId: object.id,
-          lastPaymentStatus:
-            event.type === "invoice.paid"
-              ? "paid"
-              : "payment_failed",
+          lastPaymentStatus: "payment_failed",
         });
       }
+    }
+
+    if (paidConfirmation) {
+      db.exec("COMMIT");
+
+      return {
+        status: "pending_discord_confirmation",
+        paidConfirmation,
+      };
     }
 
     repositories.markStripeWebhookEventProcessed(
@@ -359,13 +448,67 @@ function processStripeWebhookEvent({
   }
 }
 
+function completePaidConfirmation({
+  db,
+  stripeEventId,
+  stripeInvoiceId,
+  discordMessageId,
+  repositories,
+}) {
+  db.exec("BEGIN");
+
+  try {
+    repositories.markStripePaidConfirmationSent(db, {
+      stripeInvoiceId,
+      discordMessageId,
+    });
+    repositories.markStripeWebhookEventProcessed(
+      db,
+      stripeEventId
+    );
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function failPaidConfirmation({
+  db,
+  stripeEventId,
+  stripeInvoiceId,
+  error,
+  repositories,
+}) {
+  db.exec("BEGIN");
+
+  try {
+    repositories.markStripePaidConfirmationFailed(db, {
+      stripeInvoiceId,
+      error,
+    });
+    repositories.markStripeWebhookEventFailed(
+      db,
+      stripeEventId,
+      error
+    );
+    db.exec("COMMIT");
+  } catch (secondaryError) {
+    db.exec("ROLLBACK");
+    throw secondaryError;
+  }
+}
+
 module.exports = {
   PLAN_MARKETPLACE_AFFILIATE,
   PLAN_MARKETPLACE_MANAGEMENT,
   buildBillingMetadata,
+  completePaidConfirmation,
+  failPaidConfirmation,
   getBillingPlans,
   getPlanByKey,
   getPlanKeyByPriceId,
+  getPlanLabel,
   processStripeWebhookEvent,
   subscriptionFromStripeSubscription,
 };

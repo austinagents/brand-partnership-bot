@@ -203,6 +203,29 @@ function initializeSchema(db) {
       processed_at TEXT,
       processing_error TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS stripe_paid_confirmations (
+      stripe_invoice_id TEXT PRIMARY KEY,
+      stripe_subscription_id TEXT NOT NULL,
+      conversation_id INTEGER NOT NULL,
+      channel_id TEXT NOT NULL,
+      plan_key TEXT NOT NULL,
+      status TEXT NOT NULL
+        CHECK (status IN ('pending', 'sending', 'sent', 'failed')),
+      discord_message_id TEXT,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      sent_at TEXT,
+      FOREIGN KEY (stripe_subscription_id)
+        REFERENCES brand_subscriptions(stripe_subscription_id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT,
+      FOREIGN KEY (conversation_id)
+        REFERENCES partnership_conversations(conversation_id)
+        ON UPDATE CASCADE
+        ON DELETE RESTRICT
+    );
   `);
 }
 
@@ -588,6 +611,110 @@ function updateSubscriptionInvoiceStatus(db, invoice) {
   );
 }
 
+function getBrandSubscription(db, stripeSubscriptionId) {
+  return db
+    .prepare(`
+      SELECT *
+      FROM brand_subscriptions
+      WHERE stripe_subscription_id = ?
+      LIMIT 1
+    `)
+    .get(stripeSubscriptionId);
+}
+
+function getPartnershipConversationById(db, conversationId) {
+  return db
+    .prepare(`
+      SELECT *
+      FROM partnership_conversations
+      WHERE conversation_id = ?
+      LIMIT 1
+    `)
+    .get(conversationId);
+}
+
+function claimStripePaidConfirmation(db, notification) {
+  const timestamp = nowISO();
+
+  db.prepare(`
+    INSERT OR IGNORE INTO stripe_paid_confirmations (
+      stripe_invoice_id,
+      stripe_subscription_id,
+      conversation_id,
+      channel_id,
+      plan_key,
+      status,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+  `).run(
+    notification.stripeInvoiceId,
+    notification.stripeSubscriptionId,
+    notification.conversationId,
+    notification.channelId,
+    notification.planKey,
+    timestamp,
+    timestamp
+  );
+
+  const result = db.prepare(`
+    UPDATE stripe_paid_confirmations
+    SET status = 'sending',
+      last_error = NULL,
+      updated_at = ?
+    WHERE stripe_invoice_id = ?
+      AND status IN ('pending', 'failed')
+  `).run(timestamp, notification.stripeInvoiceId);
+
+  const row = db
+    .prepare(`
+      SELECT *
+      FROM stripe_paid_confirmations
+      WHERE stripe_invoice_id = ?
+      LIMIT 1
+    `)
+    .get(notification.stripeInvoiceId);
+
+  return {
+    claimed: result.changes === 1,
+    notification: row,
+  };
+}
+
+function markStripePaidConfirmationSent(db, notification) {
+  const timestamp = nowISO();
+
+  db.prepare(`
+    UPDATE stripe_paid_confirmations
+    SET status = 'sent',
+      discord_message_id = ?,
+      last_error = NULL,
+      updated_at = ?,
+      sent_at = ?
+    WHERE stripe_invoice_id = ?
+  `).run(
+    notification.discordMessageId,
+    timestamp,
+    timestamp,
+    notification.stripeInvoiceId
+  );
+}
+
+function markStripePaidConfirmationFailed(db, notification) {
+  db.prepare(`
+    UPDATE stripe_paid_confirmations
+    SET status = 'failed',
+      last_error = ?,
+      updated_at = ?
+    WHERE stripe_invoice_id = ?
+  `).run(
+    String(notification.error.message || notification.error),
+    nowISO(),
+    notification.stripeInvoiceId
+  );
+}
+
 function beginStripeWebhookEvent(db, event) {
   const timestamp = nowISO();
 
@@ -658,6 +785,11 @@ module.exports = {
   updateStripeCheckoutSessionStatus,
   upsertBrandSubscription,
   updateSubscriptionInvoiceStatus,
+  getBrandSubscription,
+  getPartnershipConversationById,
+  claimStripePaidConfirmation,
+  markStripePaidConfirmationSent,
+  markStripePaidConfirmationFailed,
   beginStripeWebhookEvent,
   markStripeWebhookEventProcessed,
   markStripeWebhookEventFailed,

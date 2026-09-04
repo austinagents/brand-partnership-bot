@@ -5,6 +5,7 @@ const path = require("node:path");
 const test = require("node:test");
 
 const {
+  completePaidConfirmation,
   getBillingPlans,
   getPlanKeyByPriceId,
   processStripeWebhookEvent,
@@ -54,6 +55,16 @@ function repositories(dbm) {
       dbm.updateSubscriptionInvoiceStatus,
     upsertBrandSubscription:
       dbm.upsertBrandSubscription,
+    getBrandSubscription:
+      dbm.getBrandSubscription,
+    getPartnershipConversationById:
+      dbm.getPartnershipConversationById,
+    claimStripePaidConfirmation:
+      dbm.claimStripePaidConfirmation,
+    markStripePaidConfirmationSent:
+      dbm.markStripePaidConfirmationSent,
+    markStripePaidConfirmationFailed:
+      dbm.markStripePaidConfirmationFailed,
   };
 }
 
@@ -91,6 +102,42 @@ function subscriptionEvent(id = "evt_subscription") {
       },
     },
   };
+}
+
+function paidInvoiceEvent(id = "evt_invoice_paid") {
+  return {
+    id,
+    type: "invoice.paid",
+    livemode: false,
+    created: 1798848000,
+    data: {
+      object: {
+        id: "in_paid",
+        subscription: "sub_123",
+      },
+    },
+  };
+}
+
+function seedActiveSubscription(dbm, db) {
+  dbm.upsertPartnershipConversation(db, {
+    conversationId: 42,
+    channelId: "channel_1",
+    guildId: "guild_1",
+    discordUserId: "user_1",
+    creatorId: null,
+    creatorInviteId: null,
+    creatorInviteCode: null,
+    status: "active",
+    createdAt: new Date().toISOString(),
+  });
+
+  processStripeWebhookEvent({
+    db,
+    event: subscriptionEvent("evt_subscription_seed"),
+    plans: testPlans(),
+    repositories: repositories(dbm),
+  });
 }
 
 test("maps configured Stripe prices to internal plan keys", () => {
@@ -275,6 +322,12 @@ test("checkout completion persists initial subscription snapshot", () => {
     db,
     "cs_123"
   );
+  const notifications = db
+    .prepare(`
+      SELECT COUNT(*) AS count
+      FROM stripe_paid_confirmations
+    `)
+    .get();
 
   assert.equal(result.status, "processed");
   assert.equal(checkout.status, "complete");
@@ -287,6 +340,7 @@ test("checkout completion persists initial subscription snapshot", () => {
     "marketplace_affiliate"
   );
   assert.equal(subscription.last_payment_status, "paid");
+  assert.equal(notifications.count, 0);
 
   db.close();
 });
@@ -294,24 +348,7 @@ test("checkout completion persists initial subscription snapshot", () => {
 test("invoice events update subscription payment state", () => {
   const { dbm, db } = openTestDatabase();
 
-  dbm.upsertPartnershipConversation(db, {
-    conversationId: 42,
-    channelId: "channel_1",
-    guildId: "guild_1",
-    discordUserId: "user_1",
-    creatorId: null,
-    creatorInviteId: null,
-    creatorInviteCode: null,
-    status: "active",
-    createdAt: new Date().toISOString(),
-  });
-
-  processStripeWebhookEvent({
-    db,
-    event: subscriptionEvent("evt_subscription_first"),
-    plans: testPlans(),
-    repositories: repositories(dbm),
-  });
+  seedActiveSubscription(dbm, db);
 
   processStripeWebhookEvent({
     db,
@@ -344,6 +381,221 @@ test("invoice events update subscription payment state", () => {
     subscription.last_payment_status,
     "payment_failed"
   );
+
+  db.close();
+});
+
+test("invoice.paid creates one Discord confirmation action", () => {
+  const { dbm, db } = openTestDatabase();
+  const repos = repositories(dbm);
+
+  seedActiveSubscription(dbm, db);
+
+  const result = processStripeWebhookEvent({
+    db,
+    event: paidInvoiceEvent(),
+    plans: testPlans(),
+    repositories: repos,
+  });
+
+  assert.equal(
+    result.status,
+    "pending_discord_confirmation"
+  );
+  assert.equal(
+    result.paidConfirmation.channelId,
+    "channel_1"
+  );
+  assert.equal(
+    result.paidConfirmation.planLabel,
+    "Marketplace + Management"
+  );
+
+  completePaidConfirmation({
+    db,
+    stripeEventId:
+      result.paidConfirmation.stripeEventId,
+    stripeInvoiceId:
+      result.paidConfirmation.stripeInvoiceId,
+    discordMessageId: "discord_message_1",
+    repositories: repos,
+  });
+
+  const duplicate = processStripeWebhookEvent({
+    db,
+    event: paidInvoiceEvent(),
+    plans: testPlans(),
+    repositories: repos,
+  });
+
+  const notifications = db
+    .prepare(`
+      SELECT COUNT(*) AS count
+      FROM stripe_paid_confirmations
+      WHERE stripe_invoice_id = ?
+        AND status = 'sent'
+    `)
+    .get("in_paid");
+
+  assert.equal(
+    duplicate.status,
+    "already_processed"
+  );
+  assert.equal(notifications.count, 1);
+
+  db.close();
+});
+
+test("duplicate invoice.paid while sending does not create another action", () => {
+  const { dbm, db } = openTestDatabase();
+  const repos = repositories(dbm);
+
+  seedActiveSubscription(dbm, db);
+
+  const first = processStripeWebhookEvent({
+    db,
+    event: paidInvoiceEvent(),
+    plans: testPlans(),
+    repositories: repos,
+  });
+
+  const duplicate = processStripeWebhookEvent({
+    db,
+    event: paidInvoiceEvent("evt_invoice_paid_duplicate"),
+    plans: testPlans(),
+    repositories: repos,
+  });
+
+  const notifications = db
+    .prepare(`
+      SELECT COUNT(*) AS count
+      FROM stripe_paid_confirmations
+      WHERE stripe_invoice_id = ?
+    `)
+    .get("in_paid");
+
+  assert.equal(
+    first.status,
+    "pending_discord_confirmation"
+  );
+  assert.equal(
+    duplicate.status,
+    "confirmation_in_progress"
+  );
+  assert.equal(notifications.count, 1);
+
+  db.close();
+});
+
+test("unpaid checkout does not create paid confirmation", () => {
+  const { dbm, db } = openTestDatabase();
+
+  dbm.upsertPartnershipConversation(db, {
+    conversationId: 42,
+    channelId: "channel_1",
+    guildId: "guild_1",
+    discordUserId: "user_1",
+    creatorId: null,
+    creatorInviteId: null,
+    creatorInviteCode: null,
+    status: "active",
+    createdAt: new Date().toISOString(),
+  });
+
+  dbm.upsertStripeCheckoutSession(db, {
+    stripeCheckoutSessionId: "cs_unpaid",
+    stripeCustomerId: "cus_123",
+    conversationId: 42,
+    guildId: "guild_1",
+    discordUserId: "user_1",
+    planKey: "marketplace_affiliate",
+    stripePriceId: "price_affiliate",
+    creatorId: null,
+    creatorInviteId: null,
+    creatorInviteCode: null,
+    status: "open",
+    url: "https://checkout.stripe.com/test",
+    expiresAt: null,
+  });
+
+  const result = processStripeWebhookEvent({
+    db,
+    event: {
+      id: "evt_checkout_unpaid",
+      type: "checkout.session.completed",
+      livemode: false,
+      created: 1798848000,
+      data: {
+        object: {
+          id: "cs_unpaid",
+          status: "complete",
+          customer: "cus_123",
+          subscription: "sub_unpaid",
+          invoice: "in_unpaid",
+          payment_status: "unpaid",
+          metadata: {
+            guild_id: "guild_1",
+            discord_user_id: "user_1",
+            conversation_id: "42",
+            plan_key: "marketplace_affiliate",
+          },
+        },
+      },
+    },
+    plans: testPlans(),
+    repositories: repositories(dbm),
+  });
+
+  const notifications = db
+    .prepare(`
+      SELECT COUNT(*) AS count
+      FROM stripe_paid_confirmations
+    `)
+    .get();
+
+  assert.equal(result.status, "processed");
+  assert.equal(notifications.count, 0);
+
+  db.close();
+});
+
+test("paid invoice without conversation mapping fails safely", () => {
+  const { dbm, db } = openTestDatabase();
+
+  dbm.upsertBrandSubscription(db, {
+    stripeSubscriptionId: "sub_123",
+    stripeCustomerId: "cus_123",
+    conversationId: null,
+    guildId: "guild_1",
+    discordUserId: "user_1",
+    planKey: "marketplace_affiliate",
+    stripePriceId: "price_affiliate",
+    status: "active",
+    currentPeriodStart: null,
+    currentPeriodEnd: null,
+    cancelAtPeriodEnd: false,
+    canceledAt: null,
+    latestInvoiceId: null,
+    lastPaymentStatus: null,
+  });
+
+  assert.throws(() => {
+    processStripeWebhookEvent({
+      db,
+      event: paidInvoiceEvent("evt_missing_mapping"),
+      plans: testPlans(),
+      repositories: repositories(dbm),
+    });
+  }, /No conversation id stored/);
+
+  const notifications = db
+    .prepare(`
+      SELECT COUNT(*) AS count
+      FROM stripe_paid_confirmations
+    `)
+    .get();
+
+  assert.equal(notifications.count, 0);
 
   db.close();
 });
