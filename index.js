@@ -2626,7 +2626,7 @@ function buildBrandsActivityPage() {
     };
   </script>
 
-  <script src="/stripe-js/v3/"></script>
+  <script src="https://js.stripe.com/dahlia/stripe.js"></script>
 
   <script type="module">
     import {
