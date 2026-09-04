@@ -78,6 +78,9 @@ const {
   ARCHIVED_CATEGORY_ID,
   STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET,
+  STRIPE_PUBLISHABLE_KEY,
+  DISCORD_CLIENT_ID,
+  DISCORD_CLIENT_SECRET,
   PUBLIC_BASE_URL,
   HTTP_PORT,
 } = process.env;
@@ -2490,6 +2493,76 @@ function buildBrandsActivityPage() {
       }
     }
 
+
+    #checkout-shell {
+      width: min(100%, 960px);
+      max-height: calc(100dvh - 48px);
+      overflow-y: auto;
+      margin: 0 auto;
+      padding: 8px 10px 40px;
+    }
+
+    #checkout-shell[hidden] {
+      display: none;
+    }
+
+    .checkout-toolbar {
+      margin-bottom: 14px;
+    }
+
+    #checkout-back {
+      border: 0;
+      padding: 8px 0;
+      background: transparent;
+      color: #c8cec7;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    #checkout-back:hover {
+      color: #f4f6f2;
+    }
+
+    #checkout-status {
+      margin: 0 0 14px;
+      color: #c8cec7;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    #checkout-status:empty {
+      display: none;
+    }
+
+    #checkout-status[data-type="error"] {
+      padding: 14px;
+      border: 1px solid rgba(230, 110, 110, 0.35);
+      border-radius: 8px;
+      background: rgba(110, 30, 30, 0.18);
+      color: #f0caca;
+    }
+
+    #checkout-status[data-type="success"] {
+      padding: 18px;
+      border: 1px solid rgba(155, 201, 167, 0.38);
+      border-radius: 10px;
+      background: rgba(45, 85, 55, 0.20);
+      color: #dcecdf;
+      font-size: 16px;
+    }
+
+    #checkout {
+      width: 100%;
+      min-height: 460px;
+    }
+
+    .cta:disabled {
+      opacity: 0.68;
+      cursor: wait;
+    }
+
     /* PARTNERLINKS_PRICING_LAYOUT_END */
 
 </style>
@@ -2536,14 +2609,313 @@ function buildBrandsActivityPage() {
         <button class="cta" type="button" data-plan="marketplace_management">Continue to Secure Checkout →</button>
       </article>
     </section>
+
+    <section id="checkout-shell" hidden aria-label="Secure PartnerLinks checkout">
+      <div class="checkout-toolbar">
+        <button id="checkout-back" type="button">← Back to plans</button>
+      </div>
+
+      <div id="checkout-status" role="status" aria-live="polite"></div>
+      <div id="checkout"></div>
+    </section>
   </main>
 
   <script>
-    document.querySelectorAll(".cta").forEach((button) => {
-      button.addEventListener("click", () => {
-        console.log("PartnerLinks plan selected:", button.dataset.plan);
+    window.__PARTNERLINKS_CONFIG__ = {
+      discordClientId: ${JSON.stringify(DISCORD_CLIENT_ID || "")},
+      stripePublishableKey: ${JSON.stringify(STRIPE_PUBLISHABLE_KEY || "")}
+    };
+  </script>
+
+  <script src="/stripe-js/v3/"></script>
+
+  <script type="module">
+    import {
+      DiscordSDK
+    } from "/discord-sdk/npm/@discord/embedded-app-sdk@2.5.0/+esm";
+
+    const config = window.__PARTNERLINKS_CONFIG__;
+
+    const plans = document.querySelector(".plans");
+    const checkoutShell =
+      document.getElementById("checkout-shell");
+    const checkoutElement =
+      document.getElementById("checkout");
+    const statusElement =
+      document.getElementById("checkout-status");
+    const backButton =
+      document.getElementById("checkout-back");
+    const buttons =
+      [...document.querySelectorAll(".cta[data-plan]")];
+
+    let discordSdk = null;
+    let discordAccessToken = null;
+    let authenticatedUser = null;
+    let embeddedCheckout = null;
+
+    function setStatus(message, type = "") {
+      statusElement.textContent = message || "";
+      statusElement.dataset.type = type;
+    }
+
+    function setButtonsDisabled(disabled, activeButton = null) {
+      for (const button of buttons) {
+        if (!button.dataset.originalText) {
+          button.dataset.originalText =
+            button.textContent;
+        }
+
+        button.disabled = disabled;
+
+        if (disabled && button === activeButton) {
+          button.textContent =
+            "Opening Secure Checkout…";
+        } else {
+          button.textContent =
+            button.dataset.originalText;
+        }
+      }
+    }
+
+    function showCheckout() {
+      plans.hidden = true;
+      checkoutShell.hidden = false;
+    }
+
+    function showPlans() {
+      if (embeddedCheckout) {
+        try {
+          embeddedCheckout.destroy();
+        } catch (_) {}
+
+        embeddedCheckout = null;
+      }
+
+      checkoutElement.innerHTML = "";
+      setStatus("");
+
+      checkoutShell.hidden = true;
+      plans.hidden = false;
+
+      setButtonsDisabled(false);
+    }
+
+    async function parseResponse(response) {
+      const data = await response
+        .json()
+        .catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+          "The request could not be completed."
+        );
+      }
+
+      return data;
+    }
+
+    async function authenticateDiscord() {
+      if (
+        discordAccessToken &&
+        authenticatedUser?.id
+      ) {
+        return authenticatedUser;
+      }
+
+      if (!config.discordClientId) {
+        throw new Error(
+          "Discord Activity client ID is not configured."
+        );
+      }
+
+      discordSdk =
+        new DiscordSDK(config.discordClientId);
+
+      await discordSdk.ready();
+
+      const authorization =
+        await discordSdk.commands.authorize({
+          client_id:
+            config.discordClientId,
+          response_type: "code",
+          state: "",
+          prompt: "none",
+          scope: ["identify"],
+        });
+
+      if (!authorization?.code) {
+        throw new Error(
+          "Discord authorization failed."
+        );
+      }
+
+      const response = await fetch(
+        "/discord/activity-token",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            code: authorization.code,
+          }),
+        }
+      );
+
+      const token =
+        await parseResponse(response);
+
+      if (!token.access_token) {
+        throw new Error(
+          "Discord access token was not returned."
+        );
+      }
+
+      discordAccessToken =
+        token.access_token;
+
+      const auth =
+        await discordSdk.commands.authenticate({
+          access_token:
+            discordAccessToken,
+        });
+
+      if (!auth?.user?.id) {
+        throw new Error(
+          "Discord Activity authentication failed."
+        );
+      }
+
+      authenticatedUser =
+        auth.user;
+
+      return authenticatedUser;
+    }
+
+    async function openCheckout(button) {
+      setButtonsDisabled(true, button);
+
+      try {
+        await authenticateDiscord();
+
+        if (!discordSdk.channelId) {
+          throw new Error(
+            "Open PartnerLinks Plans from your partnership channel."
+          );
+        }
+
+        const response = await fetch(
+          "/stripe/activity-checkout",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+              "Authorization":
+                "Bearer " +
+                discordAccessToken,
+            },
+            body: JSON.stringify({
+              plan:
+                button.dataset.plan,
+              channel_id:
+                discordSdk.channelId,
+            }),
+          }
+        );
+
+        const checkout =
+          await parseResponse(response);
+
+        if (!checkout.clientSecret) {
+          throw new Error(
+            "Stripe checkout could not be initialized."
+          );
+        }
+
+        if (
+          !config.stripePublishableKey ||
+          typeof window.Stripe !== "function"
+        ) {
+          throw new Error(
+            "Stripe.js is not available."
+          );
+        }
+
+        showCheckout();
+        setStatus(
+          "Loading secure checkout…"
+        );
+
+        const stripe =
+          window.Stripe(
+            config.stripePublishableKey
+          );
+
+        embeddedCheckout =
+          await stripe.initEmbeddedCheckout({
+            clientSecret:
+              checkout.clientSecret,
+
+            onComplete: () => {
+              if (embeddedCheckout) {
+                try {
+                  embeddedCheckout.destroy();
+                } catch (_) {}
+
+                embeddedCheckout = null;
+              }
+
+              checkoutElement.innerHTML = "";
+
+              setStatus(
+                "Payment submitted. Stripe will confirm your subscription in Discord.",
+                "success"
+              );
+            },
+          });
+
+        setStatus("");
+
+        embeddedCheckout.mount(
+          "#checkout"
+        );
+      } catch (error) {
+        console.error(error);
+
+        showCheckout();
+
+        setStatus(
+          error?.message ||
+          "Secure checkout could not be opened.",
+          "error"
+        );
+
+        setButtonsDisabled(false);
+      }
+    }
+
+    for (const button of buttons) {
+      button.addEventListener(
+        "click",
+        () => openCheckout(button)
+      );
+    }
+
+    backButton.addEventListener(
+      "click",
+      showPlans
+    );
+
+    authenticateDiscord()
+      .catch((error) => {
+        console.warn(
+          "Discord authentication not ready:",
+          error?.message || error
+        );
       });
-    });
   </script>
 </body>
 </html>`;
@@ -2676,6 +3048,451 @@ async function handleStripeWebhook(request, response) {
   }
 }
 
+
+function sendJsonResponse(response, statusCode, payload) {
+  const body = JSON.stringify(payload);
+
+  response.writeHead(statusCode, {
+    "Content-Type":
+      "application/json; charset=utf-8",
+    "Content-Length":
+      Buffer.byteLength(body),
+    "Cache-Control": "no-store",
+  });
+
+  response.end(body);
+}
+
+async function readJsonRequestBody(request) {
+  const raw = await readRawRequestBody(request);
+
+  if (!raw.length) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(
+      raw.toString("utf8")
+    );
+  } catch {
+    throw new Error(
+      "Request body must be valid JSON."
+    );
+  }
+}
+
+function getBearerToken(request) {
+  const value =
+    request.headers.authorization || "";
+
+  const match =
+    value.match(/^Bearer\s+(.+)$/i);
+
+  return match
+    ? match[1].trim()
+    : null;
+}
+
+async function exchangeDiscordActivityCode(code) {
+  if (
+    !DISCORD_CLIENT_ID ||
+    !DISCORD_CLIENT_ID.trim()
+  ) {
+    throw new Error(
+      "DISCORD_CLIENT_ID is not configured."
+    );
+  }
+
+  if (
+    !DISCORD_CLIENT_SECRET ||
+    !DISCORD_CLIENT_SECRET.trim()
+  ) {
+    throw new Error(
+      "DISCORD_CLIENT_SECRET is not configured."
+    );
+  }
+
+  if (!code) {
+    throw new Error(
+      "Discord authorization code is required."
+    );
+  }
+
+  const result = await fetch(
+    "https://discord.com/api/oauth2/token",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        client_id:
+          DISCORD_CLIENT_ID,
+        client_secret:
+          DISCORD_CLIENT_SECRET,
+        grant_type:
+          "authorization_code",
+        code,
+      }),
+    }
+  );
+
+  const body =
+    await result.json();
+
+  if (
+    !result.ok ||
+    !body.access_token
+  ) {
+    console.error(
+      "Discord OAuth exchange failed:",
+      body
+    );
+
+    throw new Error(
+      "Discord authorization failed."
+    );
+  }
+
+  return body;
+}
+
+async function getVerifiedDiscordUser(
+  accessToken
+) {
+  const result = await fetch(
+    "https://discord.com/api/v10/users/@me",
+    {
+      headers: {
+        Authorization:
+          `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  const user =
+    await result.json();
+
+  if (
+    !result.ok ||
+    !user?.id
+  ) {
+    throw new Error(
+      "Discord authentication could not be verified."
+    );
+  }
+
+  return user;
+}
+
+async function handleDiscordActivityToken(
+  request,
+  response
+) {
+  try {
+    const body =
+      await readJsonRequestBody(request);
+
+    const token =
+      await exchangeDiscordActivityCode(
+        body.code
+      );
+
+    sendJsonResponse(
+      response,
+      200,
+      {
+        access_token:
+          token.access_token,
+        token_type:
+          token.token_type || "Bearer",
+        expires_in:
+          token.expires_in || null,
+        scope:
+          token.scope || null,
+      }
+    );
+  } catch (error) {
+    console.error(
+      "Activity OAuth error:",
+      error
+    );
+
+    sendJsonResponse(
+      response,
+      400,
+      {
+        error: error.message,
+      }
+    );
+  }
+}
+
+async function handleActivityCheckout(
+  request,
+  response
+) {
+  try {
+    const accessToken =
+      getBearerToken(request);
+
+    if (!accessToken) {
+      sendJsonResponse(
+        response,
+        401,
+        {
+          error:
+            "Discord authentication is required.",
+        }
+      );
+      return;
+    }
+
+    const body =
+      await readJsonRequestBody(request);
+
+    const planKey =
+      typeof body.plan === "string"
+        ? body.plan.trim()
+        : "";
+
+    const channelId =
+      typeof body.channel_id === "string"
+        ? body.channel_id.trim()
+        : "";
+
+    if (!planKey || !channelId) {
+      sendJsonResponse(
+        response,
+        400,
+        {
+          error:
+            "Plan and partnership channel are required.",
+        }
+      );
+      return;
+    }
+
+    const discordUser =
+      await getVerifiedDiscordUser(
+        accessToken
+      );
+
+    const conversation =
+      getPartnershipConversationByChannelId(
+        db,
+        channelId
+      );
+
+    if (!conversation) {
+      sendJsonResponse(
+        response,
+        404,
+        {
+          error:
+            "No PartnerLinks partnership was found for this channel.",
+        }
+      );
+      return;
+    }
+
+    if (
+      conversation.guild_id !== GUILD_ID
+    ) {
+      sendJsonResponse(
+        response,
+        403,
+        {
+          error:
+            "This partnership does not belong to this PartnerLinks server.",
+        }
+      );
+      return;
+    }
+
+    if (
+      conversation.discord_user_id !==
+      discordUser.id
+    ) {
+      sendJsonResponse(
+        response,
+        403,
+        {
+          error:
+            "Only the person who opened this partnership can start checkout.",
+        }
+      );
+      return;
+    }
+
+    if (
+      conversation.status !== "active"
+    ) {
+      sendJsonResponse(
+        response,
+        409,
+        {
+          error:
+            "This partnership is no longer active.",
+        }
+      );
+      return;
+    }
+
+    const plans =
+      getConfiguredBillingPlans();
+
+    let plan;
+
+    try {
+      plan =
+        getPlanByKey(
+          plans,
+          planKey
+        );
+    } catch {
+      plan = null;
+    }
+
+    if (
+      !plan ||
+      ![
+        PLAN_MARKETPLACE_AFFILIATE,
+        PLAN_MARKETPLACE_MANAGEMENT,
+      ].includes(plan.key)
+    ) {
+      sendJsonResponse(
+        response,
+        400,
+        {
+          error:
+            "Invalid PartnerLinks plan.",
+        }
+      );
+      return;
+    }
+
+    const stripe =
+      getStripeClient();
+
+    const customer =
+      await getOrCreateStripeCustomer({
+        stripe,
+        conversation,
+        user: {
+          id: discordUser.id,
+          tag:
+            discordUser.global_name ||
+            discordUser.username ||
+            discordUser.id,
+        },
+      });
+
+    const metadata =
+      buildBillingMetadata(
+        conversation,
+        plan.key
+      );
+
+    const session =
+      await stripe.checkout.sessions.create({
+        ui_mode: "embedded",
+        mode: "subscription",
+
+        customer:
+          customer.stripe_customer_id,
+
+        client_reference_id:
+          `${conversation.guild_id}:${conversation.discord_user_id}:${conversation.conversation_id}`,
+
+        line_items: [
+          {
+            price:
+              plan.priceId,
+            quantity: 1,
+          },
+        ],
+
+        metadata,
+
+        subscription_data: {
+          metadata,
+        },
+
+        /*
+          Keep checkout fully inside Discord.
+          Redirect-based payment methods are intentionally
+          excluded for this beta.
+        */
+        redirect_on_completion:
+          "never",
+      });
+
+    if (!session.client_secret) {
+      throw new Error(
+        "Stripe did not return an Embedded Checkout client secret."
+      );
+    }
+
+    upsertStripeCheckoutSession(
+      db,
+      {
+        stripeCheckoutSessionId:
+          session.id,
+        stripeCustomerId:
+          customer.stripe_customer_id,
+        conversationId:
+          conversation.conversation_id,
+        guildId:
+          conversation.guild_id,
+        discordUserId:
+          conversation.discord_user_id,
+        planKey:
+          plan.key,
+        stripePriceId:
+          plan.priceId,
+        creatorId:
+          conversation.creator_id,
+        creatorInviteId:
+          conversation.creator_invite_id,
+        creatorInviteCode:
+          conversation.creator_invite_code,
+        status:
+          session.status || "open",
+        url: null,
+        expiresAt:
+          isoFromStripeTimestamp(
+            session.expires_at
+          ),
+      }
+    );
+
+    sendJsonResponse(
+      response,
+      200,
+      {
+        clientSecret:
+          session.client_secret,
+      }
+    );
+  } catch (error) {
+    console.error(
+      "Activity checkout error:",
+      error
+    );
+
+    sendJsonResponse(
+      response,
+      500,
+      {
+        error:
+          "Secure checkout could not be opened. Please try again.",
+      }
+    );
+  }
+}
+
 async function handleHttpRequest(request, response) {
   const url = new URL(
     request.url,
@@ -2687,6 +3504,28 @@ async function handleHttpRequest(request, response) {
     url.pathname === "/stripe/webhook"
   ) {
     await handleStripeWebhook(request, response);
+    return;
+  }
+
+  if (
+    request.method === "POST" &&
+    url.pathname === "/discord/activity-token"
+  ) {
+    await handleDiscordActivityToken(
+      request,
+      response
+    );
+    return;
+  }
+
+  if (
+    request.method === "POST" &&
+    url.pathname === "/stripe/activity-checkout"
+  ) {
+    await handleActivityCheckout(
+      request,
+      response
+    );
     return;
   }
 
