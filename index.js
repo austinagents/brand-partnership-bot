@@ -1727,75 +1727,80 @@ function buildBrandsActivityPage() {
 
       main {
         padding:
-          clamp(14px, 2.2vh, 24px)
+          clamp(12px, 1.8vh, 20px)
           clamp(24px, 3vw, 56px)
-          clamp(108px, 12vh, 132px);
+          clamp(34px, 5vh, 58px);
       }
 
       .plan {
-        padding: clamp(22px, 2.5vw, 34px);
+        padding: clamp(18px, 2.2vw, 30px);
       }
 
       .badge {
-        margin-bottom: clamp(12px, 1.5vh, 18px);
-        padding: 7px 13px;
-        font-size: clamp(10px, 0.9vw, 13px);
+        margin-bottom: clamp(10px, 1.2vh, 14px);
+        padding: 6px 12px;
+        font-size: clamp(10px, 0.82vw, 12px);
       }
 
       h1 {
-        font-size: clamp(30px, 2.7vw, 48px);
+        font-size: clamp(28px, 2.45vw, 40px);
       }
 
       .price {
-        margin-top: clamp(12px, 1.6vh, 20px);
+        margin-top: clamp(8px, 1.2vh, 13px);
       }
 
       .amount {
-        font-size: clamp(48px, 4.8vw, 78px);
+        font-size: clamp(44px, 4.2vw, 66px);
       }
 
       .period {
-        font-size: clamp(16px, 1.35vw, 22px);
+        font-size: clamp(15px, 1.15vw, 19px);
       }
 
       .description {
-        min-height: clamp(58px, 7.5vh, 84px);
-        margin-top: clamp(10px, 1.4vh, 16px);
-        font-size: clamp(15px, 1.2vw, 19px);
+        min-height: clamp(42px, 5.8vh, 58px);
+        margin-top: clamp(8px, 1.1vh, 12px);
+        font-size: clamp(14px, 1vw, 16px);
+        line-height: 1.3;
       }
 
       .divider {
-        margin: clamp(12px, 1.9vh, 22px) 0 clamp(12px, 1.7vh, 20px);
+        margin: clamp(10px, 1.4vh, 14px) 0 clamp(9px, 1.2vh, 12px);
       }
 
       ul {
-        gap: clamp(8px, 1.1vh, 13px);
+        flex: 0 0 auto;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: clamp(6px, 0.85vh, 9px);
       }
 
       li {
-        font-size: clamp(13px, 1vw, 17px);
-        line-height: 1.2;
+        grid-template-columns: clamp(18px, 1.25vw, 22px) 1fr;
+        gap: 9px;
+        font-size: clamp(12px, 0.9vw, 14px);
+        line-height: 1.18;
       }
 
       .check {
-        width: clamp(19px, 1.4vw, 23px);
-        height: clamp(19px, 1.4vw, 23px);
-        font-size: clamp(12px, 0.9vw, 14px);
+        width: clamp(18px, 1.25vw, 22px);
+        height: clamp(18px, 1.25vw, 22px);
+        font-size: clamp(11px, 0.8vw, 13px);
       }
 
       .cta {
-        height: clamp(48px, 5.6vh, 60px);
-        margin-top: clamp(28px, 3.2vh, 36px);
-        font-size: clamp(14px, 1.05vw, 17px);
+        height: clamp(44px, 5.2vh, 52px);
+        margin-top: clamp(20px, 2.6vh, 28px);
+        font-size: clamp(13px, 0.95vw, 15px);
       }
     }
 
     @media (max-height: 760px) and (min-width: 801px) {
       main {
         padding:
-          12px
+          10px
           clamp(18px, 2.4vw, 40px)
-          clamp(96px, 13vh, 112px);
+          clamp(28px, 5vh, 44px);
       }
 
       .plans {
@@ -1839,6 +1844,8 @@ function buildBrandsActivityPage() {
       }
 
       ul {
+        flex: 0 0 auto;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: clamp(6px, 0.9vh, 9px);
       }
 
@@ -1856,7 +1863,7 @@ function buildBrandsActivityPage() {
 
       .cta {
         height: clamp(42px, 5.8vh, 50px);
-        margin-top: 24px;
+        margin-top: 20px;
         font-size: clamp(13px, 0.9vw, 15px);
       }
     }

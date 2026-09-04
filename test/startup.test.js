@@ -291,6 +291,10 @@ test("HTTP routes serve Activity UI and preserve existing endpoints", async () =
     assert.match(root.body, /overflow: hidden/);
     assert.match(root.body, /flex: 1 1 auto/);
     assert.match(root.body, /flex: 0 0 auto/);
+    assert.match(
+      root.body,
+      /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/
+    );
     assert.match(root.body, /@media \(max-height: 980px\)/);
     assert.match(root.body, /@media \(max-height: 760px\)/);
     assert.match(root.body, /@media \(max-width: 800px\)/);
