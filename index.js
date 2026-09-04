@@ -1557,6 +1557,7 @@ function buildBrandsActivityPage() {
       width: 100%;
       height: 100dvh;
       display: flex;
+      align-items: center;
       justify-content: center;
       padding:
         clamp(18px, 3vh, 36px)
@@ -1567,7 +1568,8 @@ function buildBrandsActivityPage() {
     .plans {
       width: 100%;
       max-width: 1760px;
-      height: 100%;
+      height: min(100%, 690px);
+      max-height: 690px;
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: clamp(24px, 3vw, 48px);
@@ -1804,6 +1806,8 @@ function buildBrandsActivityPage() {
       }
 
       .plans {
+        height: 100%;
+        max-height: none;
         gap: clamp(16px, 2.2vw, 32px);
       }
 
@@ -1890,6 +1894,7 @@ function buildBrandsActivityPage() {
 
       .plans {
         height: auto;
+        max-height: none;
         grid-template-columns: 1fr;
         gap: 16px;
       }
