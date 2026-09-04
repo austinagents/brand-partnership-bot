@@ -80,7 +80,6 @@ const {
   STRIPE_WEBHOOK_SECRET,
   STRIPE_PUBLISHABLE_KEY,
   DISCORD_CLIENT_ID,
-  DISCORD_CLIENT_SECRET,
   PUBLIC_BASE_URL,
   HTTP_PORT,
 } = process.env;
@@ -2636,7 +2635,8 @@ function buildBrandsActivityPage() {
 
     const config = window.__PARTNERLINKS_CONFIG__;
 
-    const plans = document.querySelector(".plans");
+    const plans =
+      document.querySelector(".plans");
     const checkoutShell =
       document.getElementById("checkout-shell");
     const checkoutElement =
@@ -2648,17 +2648,28 @@ function buildBrandsActivityPage() {
     const buttons =
       [...document.querySelectorAll(".cta[data-plan]")];
 
-    let discordSdk = null;
-    let discordAccessToken = null;
-    let authenticatedUser = null;
     let embeddedCheckout = null;
 
-    function setStatus(message, type = "") {
-      statusElement.textContent = message || "";
-      statusElement.dataset.type = type;
+    if (!config.discordClientId) {
+      console.error(
+        "Discord Activity client ID is not configured."
+      );
     }
 
-    function setButtonsDisabled(disabled, activeButton = null) {
+    const discordSdk =
+      new DiscordSDK(config.discordClientId);
+
+    function setStatus(message, type = "") {
+      statusElement.textContent =
+        message || "";
+      statusElement.dataset.type =
+        type;
+    }
+
+    function setButtonsDisabled(
+      disabled,
+      activeButton = null
+    ) {
       for (const button of buttons) {
         if (!button.dataset.originalText) {
           button.dataset.originalText =
@@ -2667,7 +2678,10 @@ function buildBrandsActivityPage() {
 
         button.disabled = disabled;
 
-        if (disabled && button === activeButton) {
+        if (
+          disabled &&
+          button === activeButton
+        ) {
           button.textContent =
             "Opening Secure Checkout…";
         } else {
@@ -2701,9 +2715,10 @@ function buildBrandsActivityPage() {
     }
 
     async function parseResponse(response) {
-      const data = await response
-        .json()
-        .catch(() => ({}));
+      const data =
+        await response
+          .json()
+          .catch(() => ({}));
 
       if (!response.ok) {
         throw new Error(
@@ -2715,100 +2730,14 @@ function buildBrandsActivityPage() {
       return data;
     }
 
-    async function authenticateDiscord() {
-      if (
-        discordAccessToken &&
-        authenticatedUser?.id
-      ) {
-        return authenticatedUser;
-      }
-
-      if (!config.discordClientId) {
-        throw new Error(
-          "Discord Activity client ID is not configured."
-        );
-      }
-
-      discordSdk =
-        new DiscordSDK(config.discordClientId);
-
-      setStatus("Connecting to Discord…");
-
-      await discordSdk.ready();
-
-      setStatus("Authorizing Discord account…");
-
-      const authorization =
-        await discordSdk.commands.authorize({
-          client_id:
-            config.discordClientId,
-          response_type: "code",
-          state: "",
-          prompt: "none",
-          scope: ["identify"],
-        });
-
-      if (!authorization?.code) {
-        throw new Error(
-          "Discord authorization failed."
-        );
-      }
-
-      setStatus("Exchanging Discord authorization…");
-
-      const response = await fetch(
-        "/discord/activity-token",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify({
-            code: authorization.code,
-          }),
-        }
-      );
-
-      const token =
-        await parseResponse(response);
-
-      if (!token.access_token) {
-        throw new Error(
-          "Discord access token was not returned."
-        );
-      }
-
-      discordAccessToken =
-        token.access_token;
-
-      setStatus("Authenticating Discord session…");
-
-      const auth =
-        await discordSdk.commands.authenticate({
-          access_token:
-            discordAccessToken,
-        });
-
-      if (!auth?.user?.id) {
-        throw new Error(
-          "Discord Activity authentication failed."
-        );
-      }
-
-      authenticatedUser =
-        auth.user;
-
-      return authenticatedUser;
-    }
-
     async function openCheckout(button) {
       setButtonsDisabled(true, button);
 
       try {
-        await authenticateDiscord();
+        const channelId =
+          discordSdk.channelId;
 
-        if (!discordSdk.channelId) {
+        if (!channelId) {
           throw new Error(
             "Open PartnerLinks Plans from your partnership channel."
           );
@@ -2821,15 +2750,12 @@ function buildBrandsActivityPage() {
             headers: {
               "Content-Type":
                 "application/json",
-              "Authorization":
-                "Bearer " +
-                discordAccessToken,
             },
             body: JSON.stringify({
               plan:
                 button.dataset.plan,
               channel_id:
-                discordSdk.channelId,
+                channelId,
             }),
           }
         );
@@ -2853,6 +2779,7 @@ function buildBrandsActivityPage() {
         }
 
         showCheckout();
+
         setStatus(
           "Loading secure checkout…"
         );
@@ -2876,7 +2803,8 @@ function buildBrandsActivityPage() {
                 embeddedCheckout = null;
               }
 
-              checkoutElement.innerHTML = "";
+              checkoutElement.innerHTML =
+                "";
 
               setStatus(
                 "Payment submitted. Stripe will confirm your subscription in Discord.",
@@ -2916,14 +2844,6 @@ function buildBrandsActivityPage() {
       "click",
       showPlans
     );
-
-    authenticateDiscord()
-      .catch((error) => {
-        console.warn(
-          "Discord authentication not ready:",
-          error?.message || error
-        );
-      });
   </script>
 </body>
 </html>`;
@@ -3089,174 +3009,11 @@ async function readJsonRequestBody(request) {
   }
 }
 
-function getBearerToken(request) {
-  const value =
-    request.headers.authorization || "";
-
-  const match =
-    value.match(/^Bearer\s+(.+)$/i);
-
-  return match
-    ? match[1].trim()
-    : null;
-}
-
-async function exchangeDiscordActivityCode(code) {
-  if (
-    !DISCORD_CLIENT_ID ||
-    !DISCORD_CLIENT_ID.trim()
-  ) {
-    throw new Error(
-      "DISCORD_CLIENT_ID is not configured."
-    );
-  }
-
-  if (
-    !DISCORD_CLIENT_SECRET ||
-    !DISCORD_CLIENT_SECRET.trim()
-  ) {
-    throw new Error(
-      "DISCORD_CLIENT_SECRET is not configured."
-    );
-  }
-
-  if (!code) {
-    throw new Error(
-      "Discord authorization code is required."
-    );
-  }
-
-  const result = await fetch(
-    "https://discord.com/api/oauth2/token",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type":
-          "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        client_id:
-          DISCORD_CLIENT_ID,
-        client_secret:
-          DISCORD_CLIENT_SECRET,
-        grant_type:
-          "authorization_code",
-        code,
-      }),
-    }
-  );
-
-  const body =
-    await result.json();
-
-  if (
-    !result.ok ||
-    !body.access_token
-  ) {
-    console.error(
-      "Discord OAuth exchange failed:",
-      body
-    );
-
-    throw new Error(
-      "Discord authorization failed."
-    );
-  }
-
-  return body;
-}
-
-async function getVerifiedDiscordUser(
-  accessToken
-) {
-  const result = await fetch(
-    "https://discord.com/api/v10/users/@me",
-    {
-      headers: {
-        Authorization:
-          `Bearer ${accessToken}`,
-      },
-    }
-  );
-
-  const user =
-    await result.json();
-
-  if (
-    !result.ok ||
-    !user?.id
-  ) {
-    throw new Error(
-      "Discord authentication could not be verified."
-    );
-  }
-
-  return user;
-}
-
-async function handleDiscordActivityToken(
-  request,
-  response
-) {
-  try {
-    const body =
-      await readJsonRequestBody(request);
-
-    const token =
-      await exchangeDiscordActivityCode(
-        body.code
-      );
-
-    sendJsonResponse(
-      response,
-      200,
-      {
-        access_token:
-          token.access_token,
-        token_type:
-          token.token_type || "Bearer",
-        expires_in:
-          token.expires_in || null,
-        scope:
-          token.scope || null,
-      }
-    );
-  } catch (error) {
-    console.error(
-      "Activity OAuth error:",
-      error
-    );
-
-    sendJsonResponse(
-      response,
-      400,
-      {
-        error: error.message,
-      }
-    );
-  }
-}
-
 async function handleActivityCheckout(
   request,
   response
 ) {
   try {
-    const accessToken =
-      getBearerToken(request);
-
-    if (!accessToken) {
-      sendJsonResponse(
-        response,
-        401,
-        {
-          error:
-            "Discord authentication is required.",
-        }
-      );
-      return;
-    }
-
     const body =
       await readJsonRequestBody(request);
 
@@ -3281,11 +3038,6 @@ async function handleActivityCheckout(
       );
       return;
     }
-
-    const discordUser =
-      await getVerifiedDiscordUser(
-        accessToken
-      );
 
     const conversation =
       getPartnershipConversationByChannelId(
@@ -3314,21 +3066,6 @@ async function handleActivityCheckout(
         {
           error:
             "This partnership does not belong to this PartnerLinks server.",
-        }
-      );
-      return;
-    }
-
-    if (
-      conversation.discord_user_id !==
-      discordUser.id
-    ) {
-      sendJsonResponse(
-        response,
-        403,
-        {
-          error:
-            "Only the person who opened this partnership can start checkout.",
         }
       );
       return;
@@ -3389,11 +3126,10 @@ async function handleActivityCheckout(
         stripe,
         conversation,
         user: {
-          id: discordUser.id,
+          id:
+            conversation.discord_user_id,
           tag:
-            discordUser.global_name ||
-            discordUser.username ||
-            discordUser.id,
+            conversation.discord_user_id,
         },
       });
 
@@ -3428,11 +3164,6 @@ async function handleActivityCheckout(
           metadata,
         },
 
-        /*
-          Keep checkout fully inside Discord.
-          Redirect-based payment methods are intentionally
-          excluded for this beta.
-        */
         redirect_on_completion:
           "never",
       });
@@ -3512,17 +3243,6 @@ async function handleHttpRequest(request, response) {
     url.pathname === "/stripe/webhook"
   ) {
     await handleStripeWebhook(request, response);
-    return;
-  }
-
-  if (
-    request.method === "POST" &&
-    url.pathname === "/discord/activity-token"
-  ) {
-    await handleDiscordActivityToken(
-      request,
-      response
-    );
     return;
   }
 
