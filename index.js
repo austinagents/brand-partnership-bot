@@ -1505,6 +1505,21 @@ function buildStripeSuccessPage() {
 </html>`;
 }
 
+function buildOnboardingActivityPage() {
+  const fs = require("node:fs");
+  const path = require("node:path");
+
+  return fs
+    .readFileSync(
+      path.join(__dirname, "activity-onboarding.html"),
+      "utf8"
+    )
+    .replace(
+      "__DISCORD_CLIENT_ID__",
+      DISCORD_CLIENT_ID || ""
+    );
+}
+
 function buildBrandsActivityPage() {
   return `<!doctype html>
 <html lang="en">
@@ -3735,8 +3750,20 @@ async function handleHttpRequest(request, response) {
 
   if (
     request.method === "GET" &&
-    (url.pathname === "/" ||
-      url.pathname === "/brands" ||
+    url.pathname === "/"
+  ) {
+    sendHtmlResponse(
+      response,
+      200,
+      buildOnboardingActivityPage()
+    );
+
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    (url.pathname === "/brands" ||
       url.pathname === "/brand-onboarding")
   ) {
     sendHtmlResponse(
@@ -3744,6 +3771,7 @@ async function handleHttpRequest(request, response) {
       200,
       buildBrandsActivityPage()
     );
+
     return;
   }
 

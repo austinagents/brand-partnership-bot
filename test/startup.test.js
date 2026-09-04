@@ -284,51 +284,27 @@ test("HTTP routes serve Activity UI and preserve existing endpoints", async () =
       root.headers["Content-Type"],
       /text\/html/
     );
-    assert.match(root.body, /PartnerLinks Plans/);
+    assert.match(root.body, /PartnerLinks Brand Onboarding/);
     assert.match(root.body, /Marketplace \+/);
     assert.match(root.body, /\$1,000/);
-    assert.match(root.body, /height: 100dvh/);
-    assert.match(root.body, /overflow: hidden/);
-    assert.match(root.body, /align-items: center/);
-    assert.match(root.body, /height: auto/);
-    assert.match(root.body, /max-height: none/);
-    const compactDesktopCss = root.body.slice(
-      root.body.indexOf("@media (max-height: 760px)"),
-      root.body.indexOf("@media (max-width: 800px)")
-    );
-    const mobileCss = root.body.slice(
-      root.body.indexOf("@media (max-width: 800px)")
-    );
+    assert.match(root.body, /Get Started/);
+
+    // Root Activity must use Discord context rather than the
+    // temporary standalone-page channel_id query parameter.
+    assert.match(root.body, /DiscordSDK/);
+    assert.match(root.body, /discordSdk\.channelId/);
+    assert.match(root.body, /discordSdk\.ready\(\)/);
+    assert.match(root.body, /openExternalLink/);
+    assert.doesNotMatch(root.body, /pageParams/);
     assert.doesNotMatch(
-      compactDesktopCss,
-      /max-height: none/
+      root.body,
+      /pageParams\.get\("channel_id"\)/
     );
-    assert.match(mobileCss, /max-height: none/);
+
+    // Activity calls the Brands backend through its mapped origin.
     assert.match(
       root.body,
-      /grid-template-rows:\s+auto\s+var\(--title-row\)\s+auto\s+var\(--description-row\)\s+auto\s+auto\s+auto/
-    );
-    assert.doesNotMatch(
-      root.body,
-      /minmax\(0, 1fr\)\s+var\(--cta-row\)/
-    );
-    assert.match(root.body, /--title-row: 118px/);
-    assert.match(root.body, /--description-row: 112px/);
-    assert.match(root.body, /--features-row: 120px/);
-    assert.match(root.body, /--badge-row: 34px/);
-    assert.match(root.body, /height: var\(--badge-row\)/);
-    assert.match(root.body, /padding: 0 18px/);
-    assert.match(root.body, /margin-top: var\(--cta-gap\)/);
-    assert.match(
-      root.body,
-      /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/
-    );
-    assert.match(root.body, /@media \(max-height: 980px\)/);
-    assert.match(root.body, /@media \(max-height: 760px\)/);
-    assert.match(root.body, /@media \(max-width: 800px\)/);
-    assert.doesNotMatch(
-      root.body,
-      /viewport-diagnostics/
+      /const API_BASE_URL = ""/
     );
 
     const brands = await requestHandler(capturedHandler, {
