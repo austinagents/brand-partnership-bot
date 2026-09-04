@@ -16,6 +16,23 @@ const {
   MessageFlags,
 } = require("discord.js");
 
+const {
+  openDatabase,
+  getDatabasePath,
+  getActiveCreatorInvites,
+  getStoredAttributionForUser,
+  recordJoinAttribution,
+  upsertPartnershipConversation,
+  migrateConversationsFromJson,
+} = require("./database");
+
+const {
+  createGuildTaskQueue,
+  determineInviteAttribution,
+  mergeInviteSnapshot,
+  snapshotInvites,
+} = require("./attribution");
+
 // ============================================================
 // CONFIG
 // ============================================================
@@ -45,6 +62,8 @@ for (const [key, value] of Object.entries(REQUIRED_ENV)) {
 
 const CONVERSATIONS_FILE = path.join(__dirname, "conversations.json");
 const STATE_FILE = path.join(__dirname, "state.json");
+
+const db = openDatabase();
 
 // ============================================================
 // JSON STORAGE
@@ -104,8 +123,150 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildInvites,
   ],
 });
+
+// ============================================================
+// DISCORD INVITE ATTRIBUTION
+// ============================================================
+
+const inviteCacheByGuild = new Map();
+const enqueueGuildInviteAttribution =
+  createGuildTaskQueue();
+
+function buildCreatorInviteMap(guildId) {
+  const rows = getActiveCreatorInvites(db, guildId);
+  const byCode = new Map();
+
+  for (const row of rows) {
+    byCode.set(row.discord_invite_code, row);
+  }
+
+  return byCode;
+}
+
+async function hydrateInviteCache(guild) {
+  const invites = await guild.invites.fetch();
+  inviteCacheByGuild.set(guild.id, snapshotInvites(invites));
+
+  console.log(
+    `✅ Invite cache hydrated: ${invites.size} invite(s)`
+  );
+}
+
+async function refreshInviteCache(guild) {
+  try {
+    const invites = await guild.invites.fetch();
+    const previousSnapshot =
+      inviteCacheByGuild.get(guild.id);
+
+    inviteCacheByGuild.set(
+      guild.id,
+      mergeInviteSnapshot({
+        previousSnapshot,
+        currentInvites: invites,
+      })
+    );
+
+    console.log(
+      `✅ Invite cache refreshed: ${invites.size} invite(s)`
+    );
+  } catch (error) {
+    console.warn(
+      "Could not refresh invite cache:",
+      error.message
+    );
+  }
+}
+
+async function recordGuildMemberAttribution(member) {
+  if (member.guild.id !== GUILD_ID) {
+    return;
+  }
+
+  return enqueueGuildInviteAttribution(
+    member.guild.id,
+    () => processGuildMemberAttribution(member)
+  );
+}
+
+async function processGuildMemberAttribution(member) {
+  const joinedAt = new Date().toISOString();
+  let currentInvites;
+
+  try {
+    currentInvites = await member.guild.invites.fetch();
+  } catch (error) {
+    recordJoinAttribution(db, {
+      guildId: member.guild.id,
+      discordUserId: member.user.id,
+      status: "unattributed",
+      reason: "invite_fetch_failed",
+      joinedAt,
+    });
+
+    console.warn(
+      `⚠️ Could not fetch invites for ${member.user.tag}; stored unattributed join.`
+    );
+
+    return;
+  }
+
+  const previousSnapshot =
+    inviteCacheByGuild.get(member.guild.id);
+  const result = determineInviteAttribution({
+    previousSnapshot,
+    currentInvites,
+    creatorInviteByCode:
+      buildCreatorInviteMap(member.guild.id),
+  });
+
+  inviteCacheByGuild.set(
+    member.guild.id,
+    snapshotInvites(currentInvites)
+  );
+
+  if (result.status === "attributed") {
+    const saved = recordJoinAttribution(db, {
+      guildId: member.guild.id,
+      discordUserId: member.user.id,
+      creatorId: result.creatorInvite.creator_id,
+      creatorInviteId:
+        result.creatorInvite.creator_invite_id,
+      discordInviteCode: result.inviteCode,
+      status: "attributed",
+      reason: result.reason,
+      joinedAt,
+    });
+
+    if (saved.inserted) {
+      console.log(
+        `✅ Attributed ${member.user.tag} to creator ${result.creatorInvite.creator_id} via invite ${result.inviteCode}.`
+      );
+    } else {
+      console.log(
+        `Existing join attribution preserved for ${member.user.tag}.`
+      );
+    }
+
+    return;
+  }
+
+  recordJoinAttribution(db, {
+    guildId: member.guild.id,
+    discordUserId: member.user.id,
+    discordInviteCode: result.inviteCode || null,
+    status: result.status,
+    reason: result.reason,
+    joinedAt,
+  });
+
+  console.log(
+    `Join ${result.status} for ${member.user.tag}: ${result.reason}.`
+  );
+}
 
 // ============================================================
 // PERMISSION HELPERS
@@ -409,6 +570,12 @@ async function createConversation(interaction) {
 
   const guild = interaction.guild;
   const user = interaction.user;
+  const storedAttribution =
+    getStoredAttributionForUser(
+      db,
+      guild.id,
+      user.id
+    );
 
   let conversations = loadConversations();
 
@@ -442,6 +609,17 @@ async function createConversation(interaction) {
       existing.missingAt = new Date().toISOString();
 
       saveConversations(conversations);
+
+      upsertPartnershipConversation(db, {
+        conversationId: existing.conversationId,
+        channelId: existing.channelId,
+        guildId: guild.id,
+        discordUserId: existing.userId,
+        status: existing.status,
+        createdAt: existing.createdAt,
+        archivedAt: existing.archivedAt,
+        archivedBy: existing.archivedBy,
+      });
     }
   }
 
@@ -500,6 +678,26 @@ async function createConversation(interaction) {
   conversations.push(record);
   saveConversations(conversations);
 
+  upsertPartnershipConversation(db, {
+    conversationId: conversationNumber,
+    channelId: channel.id,
+    guildId: guild.id,
+    discordUserId: user.id,
+    creatorId: storedAttribution
+      ? storedAttribution.creator_id
+      : null,
+    creatorInviteId: storedAttribution
+      ? storedAttribution.creator_invite_id
+      : null,
+    creatorInviteCode: storedAttribution
+      ? storedAttribution.discord_invite_code
+      : null,
+    status: "active",
+    createdAt: record.createdAt,
+    archivedAt: null,
+    archivedBy: null,
+  });
+
   state.nextConversationId =
     conversationNumber + 1;
 
@@ -528,6 +726,12 @@ async function createConversation(interaction) {
   console.log(
     `✅ Created partnership-${displayId} for ${user.username}`
   );
+
+  if (storedAttribution) {
+    console.log(
+      `✅ Partnership #${displayId} linked to creator ${storedAttribution.creator_id}.`
+    );
+  }
 }
 
 // ============================================================
@@ -649,6 +853,17 @@ async function archiveConversation(interaction) {
 
   saveConversations(conversations);
 
+  upsertPartnershipConversation(db, {
+    conversationId: conversation.conversationId,
+    channelId: conversation.channelId,
+    guildId: guild.id,
+    discordUserId: conversation.userId,
+    status: conversation.status,
+    createdAt: conversation.createdAt,
+    archivedAt: conversation.archivedAt,
+    archivedBy: conversation.archivedBy,
+  });
+
   // ----------------------------------------------------------
   // Disable archive button on original message
   // ----------------------------------------------------------
@@ -769,6 +984,40 @@ client.on(
   }
 );
 
+client.on(
+  Events.GuildMemberAdd,
+  async (member) => {
+    try {
+      await recordGuildMemberAttribution(member);
+    } catch (error) {
+      console.error(
+        "❌ Guild member attribution error:",
+        error
+      );
+    }
+  }
+);
+
+client.on(
+  Events.InviteCreate,
+  async (invite) => {
+    if (invite.guild && invite.guild.id === GUILD_ID) {
+      await refreshInviteCache(invite.guild);
+    }
+  }
+);
+
+client.on(
+  Events.InviteDelete,
+  async (invite) => {
+    if (invite.guild && invite.guild.id === GUILD_ID) {
+      console.log(
+        `Invite deleted: ${invite.code}. Cache will refresh after the next successful join attribution or invite creation.`
+      );
+    }
+  }
+);
+
 // ============================================================
 // STARTUP
 // ============================================================
@@ -787,6 +1036,16 @@ client.once(
 
       console.log(
         `✅ Server: ${guild.name}`
+      );
+
+      migrateConversationsFromJson(
+        db,
+        loadConversations(),
+        guild.id
+      );
+
+      console.log(
+        `✅ SQLite database: ${getDatabasePath()}`
       );
 
       // Validate admin role
@@ -832,6 +1091,9 @@ client.once(
 
       // Ensure public panel exists
       await ensurePublicPanel(guild);
+
+      // Snapshot current invite uses for deterministic future joins.
+      await hydrateInviteCache(guild);
 
       const state = loadState();
 
