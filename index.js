@@ -3855,6 +3855,70 @@ async function handleHttpRequest(request, response) {
 
   if (
     request.method === "GET" &&
+    url.pathname === "/stripe/connect/start"
+  ) {
+    const accountId =
+      url.searchParams.get("account");
+
+    if (
+      !accountId ||
+      !accountId.startsWith("acct_")
+    ) {
+      sendHttpResponse(
+        response,
+        400,
+        "Invalid Stripe account."
+      );
+
+      return;
+    }
+
+    const partnerLinksBaseUrl =
+      "https:" + "//partnerlinks.app";
+
+    const account =
+      await stripe.accounts.retrieve(
+        accountId
+      );
+
+    let stripeUrl;
+
+    if (
+      account.details_submitted &&
+      account.payouts_enabled
+    ) {
+      const loginLink =
+        await stripe.accounts.createLoginLink(
+          accountId
+        );
+
+      stripeUrl = loginLink.url;
+    } else {
+      const accountLink =
+        await stripe.accountLinks.create({
+          account: accountId,
+          refresh_url:
+            partnerLinksBaseUrl +
+            "/stripe/connect/refresh",
+          return_url:
+            partnerLinksBaseUrl +
+            "/stripe/connect/return",
+          type: "account_onboarding",
+        });
+
+      stripeUrl = accountLink.url;
+    }
+
+    response.writeHead(302, {
+      Location: stripeUrl,
+    });
+
+    response.end();
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
     url.pathname === "/stripe/connect/return"
   ) {
     sendHttpResponse(
