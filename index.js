@@ -3874,7 +3874,7 @@ async function handleHttpRequest(request, response) {
     }
 
     const partnerLinksBaseUrl =
-      "https:" + "//partnerlinks.app";
+      "https:" + "//referrals.partnerlinks.app";
 
     const account =
       await stripe.accounts.retrieve(
