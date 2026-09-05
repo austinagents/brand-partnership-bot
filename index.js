@@ -3855,6 +3855,32 @@ async function handleHttpRequest(request, response) {
 
   if (
     request.method === "GET" &&
+    url.pathname === "/stripe/connect/return"
+  ) {
+    sendHttpResponse(
+      response,
+      200,
+      "Stripe setup complete. You can return to Discord and click Stripe again to view your account."
+    );
+
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    url.pathname === "/stripe/connect/refresh"
+  ) {
+    sendHttpResponse(
+      response,
+      200,
+      "Your Stripe setup link expired. Return to Discord and click Stripe again to continue setup."
+    );
+
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
     url.pathname === "/stripe/success"
   ) {
     sendHtmlResponse(
