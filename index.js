@@ -164,11 +164,6 @@ function getStripeClient() {
     throw new Error("Missing STRIPE_SECRET_KEY.");
   }
 
-  if (STRIPE_SECRET_KEY.startsWith("sk_live_")) {
-    throw new Error(
-      "Live Stripe keys are disabled for this beta deployment."
-    );
-  }
 
   if (!stripeClient) {
     stripeClient = new Stripe(STRIPE_SECRET_KEY);
@@ -2837,14 +2832,6 @@ async function handleStripeWebhook(request, response) {
     return;
   }
 
-  if (event.livemode) {
-    sendHttpResponse(
-      response,
-      400,
-      "Live Stripe events are disabled for this beta deployment."
-    );
-    return;
-  }
 
   try {
     const result = processStripeWebhookEvent({
