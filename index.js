@@ -224,7 +224,19 @@ async function getOrCreateStripeCustomer({
   );
 
   if (existing) {
-    return existing;
+    try {
+      const customer = await stripe.customers.retrieve(
+        existing.stripe_customer_id
+      );
+
+      if (!customer.deleted) {
+        return existing;
+      }
+    } catch (error) {
+      if (error?.code !== "resource_missing") {
+        throw error;
+      }
+    }
   }
 
   const customer = await stripe.customers.create(

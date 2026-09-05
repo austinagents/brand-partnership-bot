@@ -433,7 +433,7 @@ function saveStripeCustomer(db, customer) {
   const timestamp = nowISO();
 
   db.prepare(`
-    INSERT OR IGNORE INTO stripe_customers (
+    INSERT INTO stripe_customers (
       guild_id,
       discord_user_id,
       stripe_customer_id,
@@ -441,6 +441,10 @@ function saveStripeCustomer(db, customer) {
       updated_at
     )
     VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(guild_id, discord_user_id)
+    DO UPDATE SET
+      stripe_customer_id = excluded.stripe_customer_id,
+      updated_at = excluded.updated_at
   `).run(
     customer.guildId,
     customer.discordUserId,

@@ -213,7 +213,7 @@ test("subscription plan_key follows Stripe price after portal plan switch", () =
   );
 });
 
-test("reuses one Stripe customer per guild and Discord user", () => {
+test("updates one Stripe customer per guild and Discord user", () => {
   const { dbm, db } = openTestDatabase();
 
   dbm.saveStripeCustomer(db, {
@@ -238,7 +238,7 @@ test("reuses one Stripe customer per guild and Discord user", () => {
   );
 
   assert.equal(rows.count, 1);
-  assert.equal(customer.stripe_customer_id, "cus_123");
+  assert.equal(customer.stripe_customer_id, "cus_other");
 
   db.close();
 });
