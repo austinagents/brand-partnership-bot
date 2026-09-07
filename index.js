@@ -3313,10 +3313,11 @@ async function handleOnboardingProducts(
 
     const productData =
       await fastMossPost(
-        "/shop/v1/productList",
+        "/product/v1/search",
         {
           filter: {
             seller_id: sellerId,
+            off_shelves: 0,
           },
           page: 1,
           pagesize: 100,
@@ -3328,79 +3329,44 @@ async function handleOnboardingProducts(
         ? productData.list
         : [];
 
-    const enrichedProducts = [];
-
-    for (const product of products) {
-      let enrichment = null;
-
-      try {
-        const imageData =
-          await fastMossPost(
-            "/product/v1/search",
-            {
-              filter: {
-                product_id:
-                  String(
-                    product.product_id
-                  ),
-              },
-              page: 1,
-              pagesize: 1,
-            }
-          );
-
-        enrichment =
-          Array.isArray(imageData.list)
-            ? imageData.list[0] || null
-            : null;
-      } catch (error) {
-        console.warn(
-          `FastMoss image enrichment failed for product ${product.product_id}:`,
-          error.message
-        );
-      }
-
-      enrichedProducts.push({
+    const activeProducts =
+      products.map((product) => ({
         product_id:
           String(product.product_id),
         seller_id:
-          String(product.seller_id),
+          String(
+            product.seller_id ||
+            product.shop?.seller_id ||
+            sellerId
+          ),
         title:
           product.title || "",
         price:
-          product.price ||
-          enrichment?.price ||
-          "",
+          product.price || "",
         cover:
-          enrichment?.cover || null,
+          product.cover || null,
         units_sold:
-          product.units_sold ?? null,
+          product.total_units_sold ??
+          product.units_sold ??
+          null,
         day7_units_sold:
           product.day7_units_sold ??
           null,
         product_rating:
           product.product_rating ??
-          enrichment?.product_rating ??
           null,
         sku_count:
-          product.sku_count ?? null,
-        tiktok_url:
-          product.tiktok_url ||
-          enrichment?.tiktok_url ||
-          "",
-        off_shelves:
-          enrichment?.off_shelves ?? null,
-        commission_rate:
-          enrichment?.commission_rate ??
+          product.sku_count ??
           null,
-      });
-    }
-
-    const activeProducts =
-      enrichedProducts.filter(
-        (product) =>
-          product.off_shelves !== 1
-      );
+        tiktok_url:
+          product.tiktok_url || "",
+        off_shelves:
+          product.off_shelves ??
+          0,
+        commission_rate:
+          product.commission_rate ??
+          null,
+      }));
 
     sendOnboardingJsonResponse(
       response,
